@@ -32,6 +32,10 @@ on:
         description: "Override the org pin ONLY for testing a new release"
         type: string
         default: "0.3.3"
+      auto_merge:
+        description: "Merge the docs PR immediately without human review (docs-only, add-paths capped — the safe-to-automate class per standards/09)"
+        type: boolean
+        default: true
 
 concurrency:
   group: openwiki-update-${{ github.repository }}
@@ -97,6 +101,7 @@ jobs:
 
       - name: Create OpenWiki update pull request
         if: steps.gate.outputs.configured == 'true'
+        id: docs-pr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           base: ${{ inputs.base_branch }}
@@ -108,3 +113,18 @@ jobs:
             Automated OpenWiki documentation update via the org reusable
             workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ inputs.openwiki_version }}).
             Scoped to `openwiki/` only.
+
+      # Docs flow all the way through: the PR satisfies PR-required rulesets,
+      # and this step removes the human-merge toll for a change class our
+      # auto-remediation matrix already rates safe (docs-only, path-capped).
+      # If a ruleset demands human approval (Tier A after activation), the
+      # merge fails gracefully and the PR simply waits — surfaced weekly by
+      # the security digest's stale-PR list.
+      - name: Auto-merge docs PR
+        if: steps.gate.outputs.configured == 'true' && inputs.auto_merge && steps.docs-pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ steps.docs-pr.outputs.pull-request-number }}
+        run: |
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch \
+            || echo "::warning::Docs PR #$PR could not auto-merge (likely a required review on this tier) — left open for human merge."
