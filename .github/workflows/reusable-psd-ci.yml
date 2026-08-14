@@ -116,9 +116,26 @@ jobs:
               *) echo "no runner for $PM"; return 1 ;;
             esac
           }
+          uv_auto() { # $1=step-name — uv repos: run ruff/mypy/pyright when configured
+            case "$1" in
+              lint)
+                if grep -qE '\[tool\.ruff|^ruff' pyproject.toml 2>/dev/null || [ -f ruff.toml ]; then
+                  echo "== lint (ruff)"; uv run ruff check .
+                else echo "== lint: no ruff config, skipped"; fi ;;
+              typecheck)
+                if grep -q '\[tool\.mypy\]' pyproject.toml 2>/dev/null || [ -f mypy.ini ]; then
+                  echo "== typecheck (mypy)"; uv run mypy .
+                elif grep -q '\[tool\.pyright\]' pyproject.toml 2>/dev/null || [ -f pyrightconfig.json ]; then
+                  echo "== typecheck (pyright)"; uv run pyright
+                else echo "== typecheck: no config, skipped"; fi ;;
+              *) echo "== $1: skipped for uv" ;;
+            esac
+          }
           step() { # $1=script-name $2=configured-command
             if [ "$2" = "auto" ]; then
-              if has_script "$1"; then echo "== $1"; runcmd "$1"; else echo "== $1: no script, skipped"; fi
+              if [ "$PM" = "uv" ]; then uv_auto "$1";
+              elif has_script "$1"; then echo "== $1"; runcmd "$1";
+              else echo "== $1: no script, skipped"; fi
             elif [ -n "$2" ]; then
               echo "== $1 (custom)"; eval "$2"
             fi
