@@ -4,5 +4,8 @@ on:
     types: [opened, ready_for_review, reopened]
 jobs:
   claude-review:
+    # Dependabot-triggered callers cannot grant id-token: write to the
+    # reusable — startup_failure. The reusable also self-guards; both needed.
+    if: github.actor != 'dependabot[bot]'
     uses: PSD401/.github/.github/workflows/reusable-claude-review.yml@main
     secrets: inherit
