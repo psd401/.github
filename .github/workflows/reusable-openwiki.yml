@@ -80,7 +80,9 @@ jobs:
         if: steps.gate.outputs.configured == 'true'
         # No --ignore-scripts: better-sqlite3 needs its native build. Risk is
         # bounded by job-scoped token, human-reviewed PR, and add-paths cap.
-        run: npm install --global openwiki@${{ inputs.openwiki_version }}
+        env:
+          OW_VERSION: ${{ inputs.openwiki_version }}
+        run: npm install --global "openwiki@${OW_VERSION}"
 
       - name: Run OpenWiki
         if: steps.gate.outputs.configured == 'true'

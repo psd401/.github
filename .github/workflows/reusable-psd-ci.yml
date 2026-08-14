@@ -1,7 +1,13 @@
 # Reusable CI — the org-standard build/lint/typecheck/test gate (`psd-ci`).
 # Detects the package manager from the lockfile; repos override commands via
 # inputs only when their scripts deviate from the standard names.
+#
+# Hardening note: workflow inputs are passed to bash exclusively via `env:`,
+# never `${{ }}`-interpolated into script bodies — raw interpolation is both
+# an injection surface and a syntax hazard when inputs are empty (caught by
+# the canary repo, 2026-08-14).
 name: Reusable PSD CI
+
 on:
   workflow_call:
     inputs:
@@ -30,6 +36,7 @@ on:
         description: "Tier C escape hatch only"
         type: boolean
         default: false
+
 jobs:
   run:
     name: psd-ci
@@ -42,51 +49,94 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
       - name: Detect package manager
         id: pm
         run: |
-          if [ -f bun.lock ] || [ -f bun.lockb ]; then echo "pm=bun" >> "$GITHUB_OUTPUT";
-          elif [ -f pnpm-lock.yaml ]; then echo "pm=pnpm" >> "$GITHUB_OUTPUT";
-          elif [ -f yarn.lock ]; then echo "pm=yarn" >> "$GITHUB_OUTPUT";
-          elif [ -f package-lock.json ]; then echo "pm=npm" >> "$GITHUB_OUTPUT";
-          elif [ -f uv.lock ] || [ -f pyproject.toml ]; then echo "pm=uv" >> "$GITHUB_OUTPUT";
-          else echo "pm=none" >> "$GITHUB_OUTPUT"; fi
+          if [ -f bun.lock ] || [ -f bun.lockb ]; then pm=bun
+          elif [ -f pnpm-lock.yaml ]; then pm=pnpm
+          elif [ -f yarn.lock ]; then pm=yarn
+          elif [ -f package-lock.json ]; then pm=npm
+          elif [ -f package.json ]; then pm=npm-nolock
+          elif [ -f uv.lock ] || [ -f pyproject.toml ]; then pm=uv
+          else pm=none
+          fi
+          echo "pm=$pm" >> "$GITHUB_OUTPUT"
+          echo "Detected: $pm"
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        if: steps.pm.outputs.pm == 'npm' || steps.pm.outputs.pm == 'pnpm' || steps.pm.outputs.pm == 'yarn'
+        if: contains(fromJSON('["npm","npm-nolock","pnpm","yarn"]'), steps.pm.outputs.pm)
         with:
           node-version: ${{ inputs.node-version }}
+
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         if: steps.pm.outputs.pm == 'bun'
+
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         if: steps.pm.outputs.pm == 'uv'
+
       - name: Install
+        env:
+          PM: ${{ steps.pm.outputs.pm }}
+          INSTALL_CMD: ${{ inputs.install-command }}
         run: |
-          if [ -n "${{ inputs.install-command }}" ]; then ${{ inputs.install-command }};
-          else case "${{ steps.pm.outputs.pm }}" in
+          if [ -n "$INSTALL_CMD" ]; then
+            eval "$INSTALL_CMD"
+            exit $?
+          fi
+          case "$PM" in
             bun) bun install --frozen-lockfile ;;
             pnpm) corepack enable && pnpm install --frozen-lockfile ;;
             yarn) corepack enable && yarn install --frozen-lockfile ;;
             npm) npm ci ;;
-            uv) uv sync --frozen 2>/dev/null || uv pip install -r requirements.txt ;;
+            npm-nolock) npm install ;;
+            uv) uv sync --frozen 2>/dev/null || { [ -f requirements.txt ] && uv pip install --system -r requirements.txt || echo "no deps to install"; } ;;
             none) echo "no dependencies" ;;
-          esac; fi
+          esac
+
       - name: Run gate
+        env:
+          PM: ${{ steps.pm.outputs.pm }}
+          LINT_CMD: ${{ inputs.lint-command }}
+          TYPECHECK_CMD: ${{ inputs.typecheck-command }}
+          BUILD_CMD: ${{ inputs.build-command }}
+          TEST_CMD: ${{ inputs.test-command }}
+          ALLOW_NO_TESTS: ${{ inputs.allow-no-tests }}
         run: |
           set -e
-          pm="${{ steps.pm.outputs.pm }}"
-          has_script() { [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.['$1'] ? 0 : 1)"; }
-          runcmd() { case "$pm" in bun) bun run "$1" ;; pnpm) pnpm run "$1" ;; yarn) yarn "$1" ;; npm) npm run "$1" ;; esac; }
-          step() { # $1=name $2=input-cmd
+          has_script() { [ -f package.json ] && node -e "process.exit((require('./package.json').scripts||{})['$1'] ? 0 : 1)"; }
+          runcmd() {
+            case "$PM" in
+              bun) bun run "$1" ;;
+              pnpm) pnpm run "$1" ;;
+              yarn) yarn "$1" ;;
+              npm|npm-nolock) npm run "$1" ;;
+              *) echo "no runner for $PM"; return 1 ;;
+            esac
+          }
+          step() { # $1=script-name $2=configured-command
             if [ "$2" = "auto" ]; then
               if has_script "$1"; then echo "== $1"; runcmd "$1"; else echo "== $1: no script, skipped"; fi
-            elif [ -n "$2" ]; then echo "== $1 (custom)"; eval "$2"; fi
+            elif [ -n "$2" ]; then
+              echo "== $1 (custom)"; eval "$2"
+            fi
           }
-          step lint "${{ inputs.lint-command }}"
-          step typecheck "${{ inputs.typecheck-command }}"
-          step build "${{ inputs.build-command }}"
-          if [ "${{ inputs.test-command }}" = "auto" ]; then
-            if has_script test; then echo "== test"; runcmd test;
-            elif [ "$pm" = "uv" ] && ls tests/ test_*.py 2>/dev/null | head -1 > /dev/null; then uv run pytest;
-            elif [ "${{ inputs.allow-no-tests }}" = "true" ]; then echo "::warning::No tests (allowed: Tier C)";
-            else echo "::error::No test script found. Every Tier A/B repo needs tests (standards/05-testing.md)."; exit 1; fi
-          elif [ -n "${{ inputs.test-command }}" ]; then eval "${{ inputs.test-command }}"; fi
+          step lint "$LINT_CMD"
+          step typecheck "$TYPECHECK_CMD"
+          step build "$BUILD_CMD"
+          if [ "$TEST_CMD" = "auto" ]; then
+            if has_script test; then
+              echo "== test"; runcmd test
+            elif [ "$PM" = "uv" ] && { [ -d tests ] || ls test_*.py > /dev/null 2>&1; }; then
+              echo "== test (pytest)"; uv run pytest
+            elif [ "$ALLOW_NO_TESTS" = "true" ]; then
+              echo "::warning::No tests found (allowed: Tier C escape hatch)"
+            else
+              echo "::error::No test script found. Every Tier A/B repo needs tests (standards/05-testing.md)."
+              exit 1
+            fi
+          elif [ -n "$TEST_CMD" ]; then
+            echo "== test (custom)"; eval "$TEST_CMD"
+          fi
