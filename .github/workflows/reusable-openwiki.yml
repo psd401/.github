@@ -1,0 +1,108 @@
+# Reusable OpenWiki update — the org-standard self-maintaining wiki job.
+# THIS FILE OWNS THE OPENWIKI VERSION PIN for the whole org. Bump it here,
+# every repo follows on its next run. (Kills the per-repo 0.2.0 drift.)
+#
+# Ported from aistudio's hardened openwiki-update.yml, preserving its guards:
+# graceful secret gate, persist-credentials off while LLM-driven code runs,
+# full-fetch for --update's gitHead diff, telemetry off, SHA-pinned PR action,
+# add-paths cap so generated content can't touch anything but openwiki/.
+#
+# LLM serving: Bedrock's OpenAI-compatible endpoint (spend lands on the
+# district AWS account). Do NOT switch to OPENWIKI_PROVIDER=anthropic on the
+# Bedrock /anthropic path — openwiki's @langchain/anthropic layer sends
+# request-top-level cache_control that Bedrock's compat layer rejects.
+#
+# Caller prerequisites: BEDROCK_API_KEY available (org secret exists; call
+# with `secrets: inherit`), and repo Settings → Actions → "Allow GitHub
+# Actions to create and approve pull requests" enabled for the rolling PR.
+name: Reusable OpenWiki Update
+
+on:
+  workflow_call:
+    inputs:
+      base_branch:
+        description: "Branch the wiki is generated from and PR'd against (repo default branch)"
+        type: string
+        required: true
+      model_id:
+        description: "Model via Bedrock's OpenAI-compatible endpoint"
+        type: string
+        default: "zai.glm-5"
+      openwiki_version:
+        description: "Override the org pin ONLY for testing a new release"
+        type: string
+        default: "0.3.3"
+
+concurrency:
+  group: openwiki-update-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run:
+    name: openwiki-update
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check provider secret
+        id: gate
+        env:
+          BEDROCK_KEY: ${{ secrets.BEDROCK_API_KEY }}
+        run: |
+          if [ -z "$BEDROCK_KEY" ]; then
+            echo "BEDROCK_API_KEY not configured — skipping OpenWiki update."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out repository
+        if: steps.gate.outputs.configured == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.base_branch }}
+          # Full history: --update diffs from the gitHead recorded in
+          # openwiki/.last-update.json; depth-1 strands it after the first PR.
+          fetch-depth: 0
+          # No GITHUB_TOKEN in .git/config while LLM-driven code runs.
+          persist-credentials: false
+
+      - name: Set up Node.js
+        if: steps.gate.outputs.configured == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Install OpenWiki (org-pinned)
+        if: steps.gate.outputs.configured == 'true'
+        # No --ignore-scripts: better-sqlite3 needs its native build. Risk is
+        # bounded by job-scoped token, human-reviewed PR, and add-paths cap.
+        run: npm install --global openwiki@${{ inputs.openwiki_version }}
+
+      - name: Run OpenWiki
+        if: steps.gate.outputs.configured == 'true'
+        run: openwiki code --update --print
+        env:
+          OPENWIKI_PROVIDER: openai-compatible
+          OPENWIKI_MODEL_ID: ${{ inputs.model_id }}
+          OPENAI_COMPATIBLE_BASE_URL: https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1
+          OPENAI_COMPATIBLE_API_KEY: ${{ secrets.BEDROCK_API_KEY }}
+          OPENWIKI_TELEMETRY_DISABLED: "1"
+          DO_NOT_TRACK: "1"
+
+      - name: Create OpenWiki update pull request
+        if: steps.gate.outputs.configured == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          base: ${{ inputs.base_branch }}
+          add-paths: openwiki
+          branch: openwiki/update
+          commit-message: "docs: update OpenWiki"
+          title: "docs: update OpenWiki"
+          body: |
+            Automated OpenWiki documentation update via the org reusable
+            workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ inputs.openwiki_version }}).
+            Scoped to `openwiki/` only.

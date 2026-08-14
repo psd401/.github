@@ -1,0 +1,78 @@
+# Reusable Claude code review — the org-standard AI PR reviewer.
+# Callers: see workflow-templates/claude-review.yml. Call with `secrets: inherit`.
+#
+# Standards applied (psd-dev-standards/standards/03-code-review.md):
+# - AI review is triage, never approval; this check is advisory.
+# - Cost control: callers trigger on [opened, ready_for_review, reopened] —
+#   NOT `synchronize`. Re-review on demand with `@claude review`.
+# - Severity-tiered output, ≤5 nits, file:line evidence for behavior claims.
+# - Auth preference: org/repo ANTHROPIC_API_KEY (org billing); falls back to
+#   CLAUDE_CODE_OAUTH_TOKEN for repos still on a personal subscription token.
+name: Reusable Claude Review
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: "Model for review (default Sonnet-class for cost)"
+        type: string
+        default: "claude-sonnet-5"
+      max_turns:
+        description: "Hard cap on agent turns"
+        type: number
+        default: 30
+      extra_prompt:
+        description: "Repo-specific review instructions appended to the standard prompt"
+        type: string
+        default: ""
+
+jobs:
+  run:
+    name: claude-review
+    # Dependabot runs read from the Dependabot secrets store which lacks our
+    # keys; a skipped check does not fail the PR.
+    if: github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: claude-review-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "dependabot"
+          prompt: |
+            Review this pull request per PSD engineering standards:
+
+            Findings must be severity-tiered:
+            - IMPORTANT (fix before merge): correctness bugs, security issues,
+              data-handling problems, broken behavior. Behavior claims need
+              file:line evidence.
+            - NIT: style/minor. Maximum 5 nits; summarize the rest as a count.
+            - Do not flag pre-existing issues outside this diff except security.
+
+            Focus areas: correctness, security (secrets, injection, authz),
+            student-data handling (FERPA — flag ANY student PII touching logs
+            or external services), test quality (do new tests actually assert
+            behavior?), and CI weakening (removed/skipped tests = IMPORTANT).
+
+            Use the repository's CLAUDE.md for conventions. If the diff is
+            clean, say so briefly — do not invent findings.
+            ${{ inputs.extra_prompt }}
+
+            Use `gh pr comment` with your Bash tool to leave the review as a
+            single PR comment.
+          claude_args: '--model ${{ inputs.model }} --max-turns ${{ inputs.max_turns }} --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'

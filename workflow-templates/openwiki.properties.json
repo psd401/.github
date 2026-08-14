@@ -1,0 +1,6 @@
+{
+  "name": "PSD OpenWiki Auto-docs",
+  "description": "Self-maintaining OKF wiki — version pinned centrally in the org reusable workflow",
+  "iconName": "book",
+  "categories": ["documentation"]
+}

@@ -1,0 +1,36 @@
+# Reusable license check — required check `license-check` per org ruleset.
+name: Reusable License Check
+on:
+  workflow_call:
+    inputs:
+      allowed_spdx:
+        description: "Space-separated allowed license identifiers"
+        type: string
+        default: "MIT"
+jobs:
+  run:
+    name: license-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+      - name: Verify LICENSE present and allowed
+        run: |
+          f=$(ls LICENSE LICENSE.md LICENSE.txt 2>/dev/null | head -1)
+          if [ -z "$f" ]; then
+            echo "::error::No LICENSE file. District-authored repos are MIT-licensed (standards/01-repo-lifecycle.md)."
+            exit 1
+          fi
+          ok=false
+          for id in ${{ inputs.allowed_spdx }}; do
+            case "$id" in
+              MIT) grep -q "MIT License" "$f" && ok=true ;;
+              *)   grep -qi "$id" "$f" && ok=true ;;
+            esac
+          done
+          $ok || { echo "::error::LICENSE does not match allowed set: ${{ inputs.allowed_spdx }}"; exit 1; }
+          echo "License OK ($f)"

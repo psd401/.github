@@ -1,0 +1,8 @@
+name: Claude Review
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+jobs:
+  claude-review:
+    uses: PSD401/.github/.github/workflows/reusable-claude-review.yml@main
+    secrets: inherit

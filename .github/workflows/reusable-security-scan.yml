@@ -1,0 +1,50 @@
+# Reusable security scan: zizmor (workflow hardening) + gitleaks (secrets)
+# + dependency review on PRs. Scanners run as pinned CLI binaries, never
+# convenience actions (trivy-action compromise lesson, standards/04-security.md).
+name: Reusable Security Scan
+on:
+  workflow_call:
+    inputs:
+      run_gitleaks:
+        description: "Full-history secret scan (recommended true for private repos; public repos have GitHub secret scanning)"
+        type: boolean
+        default: true
+jobs:
+  run:
+    name: security-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: zizmor — GitHub Actions workflow audit
+        run: |
+          pipx install zizmor==1.6.0 2>/dev/null || pip install zizmor==1.6.0
+          if [ -d .github/workflows ]; then
+            zizmor --min-severity high .github/workflows/ || { echo "::error::zizmor found high-severity workflow issues"; exit 1; }
+          else
+            echo "no workflows to audit"
+          fi
+      - name: gitleaks — secret scan
+        if: inputs.run_gitleaks
+        env:
+          GITLEAKS_VERSION: "8.24.0"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gl.tgz
+          tar -xzf gl.tgz gitleaks && ./gitleaks git --no-banner --redact --exit-code 1 . \
+            || { echo "::error::gitleaks found potential secrets (redacted above)"; exit 1; }
+  dependency-review:
+    name: dependency-review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9 # v4.7.1
+        with:
+          fail-on-severity: high
+          deny-licenses: "AGPL-3.0, GPL-3.0"

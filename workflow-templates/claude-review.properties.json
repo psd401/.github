@@ -1,0 +1,6 @@
+{
+  "name": "PSD Claude Code Review",
+  "description": "AI review on every PR — advisory triage, never approval (standards/03-code-review.md)",
+  "iconName": "eye",
+  "categories": ["code-review"]
+}

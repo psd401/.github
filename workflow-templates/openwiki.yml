@@ -1,0 +1,13 @@
+name: OpenWiki Update
+on:
+  workflow_dispatch:
+  push:
+    branches: [$default-branch]
+  schedule:
+    - cron: "0 8 * * 1"
+jobs:
+  openwiki:
+    uses: PSD401/.github/.github/workflows/reusable-openwiki.yml@main
+    with:
+      base_branch: $default-branch
+    secrets: inherit

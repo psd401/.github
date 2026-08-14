@@ -1,0 +1,6 @@
+{
+  "name": "PSD Standard CI",
+  "description": "The org-standard build/lint/typecheck/test gate (required check for Tier A/B repos)",
+  "iconName": "check-circle",
+  "categories": ["ci"]
+}
