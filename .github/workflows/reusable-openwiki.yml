@@ -12,9 +12,11 @@
 # Bedrock /anthropic path — openwiki's @langchain/anthropic layer sends
 # request-top-level cache_control that Bedrock's compat layer rejects.
 #
-# Caller prerequisites: BEDROCK_API_KEY available (org secret exists; call
-# with `secrets: inherit`), and repo Settings → Actions → "Allow GitHub
-# Actions to create and approve pull requests" enabled for the rolling PR.
+# Caller prerequisites: BEDROCK_API_KEY + PSD_AUTOMATION_APP_PRIVATE_KEY org
+# secrets (call with `secrets: inherit`). PR creation and self-merge run as
+# the psd-automation GitHub App — the org 'Actions can create/approve PRs'
+# toggle stays OFF (it only gates GITHUB_TOKEN); auditable bot identity per
+# standards/02 single-purpose-identity doctrine.
 name: Reusable OpenWiki Update
 
 on:
@@ -63,6 +65,14 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Mint automation app token
+        if: steps.gate.outputs.configured == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.PSD_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
+
       - name: Check out repository
         if: steps.gate.outputs.configured == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -104,6 +114,7 @@ jobs:
         id: docs-pr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ steps.app-token.outputs.token }}
           base: ${{ inputs.base_branch }}
           add-paths: openwiki
           branch: openwiki/update
@@ -123,7 +134,7 @@ jobs:
       - name: Auto-merge docs PR
         if: steps.gate.outputs.configured == 'true' && inputs.auto_merge && steps.docs-pr.outputs.pull-request-number != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR: ${{ steps.docs-pr.outputs.pull-request-number }}
         run: |
           gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch \
