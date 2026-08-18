@@ -72,6 +72,10 @@ jobs:
         with:
           app-id: ${{ vars.PSD_AUTOMATION_APP_ID }}
           private-key: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
+          # Downscope: this job needs docs-write only, never the app's
+          # security-read grants (zizmor github-app audit).
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Check out repository
         if: steps.gate.outputs.configured == 'true'
