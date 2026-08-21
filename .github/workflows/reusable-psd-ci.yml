@@ -20,6 +20,10 @@ on:
       install-command:
         type: string
         default: ""
+      runtime-standard-mode:
+        description: "Org runtime standard (bun/uv) enforcement: warn | fail | off (off = documented exemption, e.g. vendor fork)"
+        type: string
+        default: "warn"
       lint-command:
         type: string
         default: "auto"   # runs `lint` script if present
@@ -76,6 +80,27 @@ jobs:
 
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         if: steps.pm.outputs.pm == 'uv'
+
+      - name: Runtime standard (bun for JS/TS, uv for Python — standards/02)
+        env:
+          MODE: ${{ inputs.runtime-standard-mode }}
+        run: |
+          [ "$MODE" = "off" ] && { echo "runtime standard: exempt (documented)"; exit 0; }
+          bad=""
+          [ -f package-lock.json ] && bad="package-lock.json (org standard: bun — run 'bun install', commit bun.lock, delete package-lock.json)"
+          [ -f pnpm-lock.yaml ] && bad="pnpm-lock.yaml (org standard: bun)"
+          [ -f yarn.lock ] && bad="yarn.lock (org standard: bun)"
+          if [ -z "$bad" ] && [ -f requirements.txt ] && [ ! -f uv.lock ] && [ ! -f pyproject.toml ]; then
+            bad="requirements.txt without pyproject/uv.lock (org standard: uv — see standards/02)"
+          fi
+          [ -f Pipfile ] && bad="Pipfile (org standard: uv)"
+          [ -f poetry.lock ] && bad="poetry.lock (org standard: uv)"
+          if [ -n "$bad" ]; then
+            if [ "$MODE" = "fail" ]; then echo "::error::Runtime standard violation: $bad"; exit 1;
+            else echo "::warning::Runtime standard violation (will hard-fail after the conversion wave): $bad"; fi
+          else
+            echo "runtime standard: compliant"
+          fi
 
       - name: Install
         env:
