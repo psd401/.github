@@ -2,6 +2,8 @@
 
 Contributions welcome — from staff, students, other districts, and the community.
 
+*New here? The [PSD Developer Handbook](handbook/README.md) covers starting a project, fixing failing CI checks, and the standard toolchain in plain language.*
+
 ## The rules that matter
 
 1. **Disclose AI assistance.** State the tool and extent in your PR description. AI-assisted PRs are welcome; undisclosed ones are not.
