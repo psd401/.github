@@ -2,7 +2,7 @@
 
 Contributions welcome — from staff, students, other districts, and the community.
 
-*New here? The [PSD Developer Handbook](handbook/README.md) covers starting a project, fixing failing CI checks, and the standard toolchain in plain language.*
+*New here? The [PSD Developer Handbook](handbook/README.md) covers starting a project, fixing a failing CI check, and the standard toolchain in plain language.*
 
 ## The rules that matter
 

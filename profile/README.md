@@ -6,7 +6,7 @@ Software built by and for [Peninsula School District](https://www.psd401.net) (G
 
 Most code here is written with AI coding agents under district engineering standards: deterministic CI gates, AI review as triage (never approval), human accountability for every merge. Standards live in the internal `psd-dev-standards` repo.
 
-**New to building here?** Start with the [PSD Developer Handbook](https://github.com/PSD401/.github/tree/main/handbook) — plain-language guides to starting a project, fixing failing checks, and the bun/uv toolchain standard.
+**New to building here?** Start with the [PSD Developer Handbook](https://github.com/PSD401/.github/tree/main/handbook) — plain-language guides to starting a project, fixing a failing PR check, and the bun and uv toolchain standard.
 
 ## Key projects
 
