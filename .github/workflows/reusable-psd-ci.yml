@@ -40,6 +40,10 @@ on:
         description: "Tier C escape hatch only"
         type: boolean
         default: false
+      secret-scan-mode:
+        description: "gitleaks full-history secret scan: warn | fail | off. Free replacement for paid GitHub Secret Protection on private repos (standards ROADMAP Phase 0, 2026-09-25)"
+        type: string
+        default: "warn"
 
 jobs:
   run:
@@ -182,3 +186,37 @@ jobs:
           elif [ -n "$TEST_CMD" ]; then
             echo "== test (custom)"; eval "$TEST_CMD"
           fi
+
+  # Separate job so findings never break the required `psd-ci` check while in
+  # warn mode; surfaces as the `secret-scan` check. Pinned, checksum-verified
+  # CLI per standards/04 (never a convenience action).
+  secret-scan:
+    name: secret-scan
+    if: inputs.secret-scan-mode != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # full history: a secret deleted at HEAD is still leaked
+
+      - name: gitleaks (full history, redacted)
+        env:
+          MODE: ${{ inputs.secret-scan-mode }}
+          GITLEAKS_VERSION: "8.24.0"
+          GITLEAKS_SHA256: "cb49b7de5ee986510fe8666ca0273a6cc15eb82571f2f14832c9e8920751f3a4" # gitleaks_8.24.0_checksums.txt
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o "$RUNNER_TEMP/gl.tgz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gl.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gl.tgz" -C "$RUNNER_TEMP" gitleaks
+          rc=0
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact --exit-code 2 . || rc=$?
+          case "$rc" in
+            0) echo "secret scan: no findings" ;;
+            2) if [ "$MODE" = "fail" ]; then echo "::error::gitleaks found potential secrets (redacted above). Rotate first, then remove or allowlist."; exit 1
+               else echo "::warning::gitleaks found potential secrets (redacted above). Rotate first; this check will hard-fail after the cleanup wave."; fi ;;
+            *) echo "::error::gitleaks did not run cleanly (exit $rc)"; exit 1 ;;
+          esac
