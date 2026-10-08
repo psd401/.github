@@ -42,6 +42,10 @@ on:
         description: "Bedrock model or inference-profile ID. Claude IDs use the Anthropic-compatible endpoint; others use the OpenAI-compatible one"
         type: string
         default: "us.anthropic.claude-haiku-5-5"
+      first_build_model_id:
+        description: "Model for a first build (no openwiki/ yet). Empty = model_id"
+        type: string
+        default: ""
       openwiki_version:
         description: "Override the org pin ONLY for testing a new release"
         type: string
@@ -68,7 +72,9 @@ on:
         default: false
 
 concurrency:
-  group: openwiki-update-${{ github.repository }}
+  # Smoke-test legs and manual model tests get their own groups, so they don't
+  # cancel each other's queued runs (seen on PSD401/.github#8).
+  group: openwiki-update-${{ inputs.repository || github.repository }}-${{ inputs.dry_run }}-${{ inputs.from_scratch }}-${{ inputs.first_build_model_id }}
   cancel-in-progress: false
 
 # GITHUB_TOKEN only reads: checkout runs with persist-credentials false, and
@@ -118,18 +124,24 @@ jobs:
             fi
           fi
           echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "repo_name=${REPO#*/}" >> "$GITHUB_OUTPUT"
 
+      # Also used for checkout, so a dry run can read a private target repo
+      # (the model test runs from .github against other repos). Scoped to the
+      # one target repo; read-only on a dry run.
       - name: Mint automation app token
-        if: steps.gate.outputs.configured == 'true' && !inputs.dry_run
+        if: steps.gate.outputs.configured == 'true'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.PSD_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
-          # Downscope: this job needs docs-write only, never the app's
-          # security-read grants (zizmor github-app audit).
-          permission-contents: write
-          permission-pull-requests: write
+          owner: PSD401
+          repositories: ${{ steps.gate.outputs.repo_name }}
+          # Downscope: docs-write only, never the app's security-read grants
+          # (zizmor github-app audit).
+          permission-contents: ${{ inputs.dry_run && 'read' || 'write' }}
+          permission-pull-requests: ${{ inputs.dry_run && 'read' || 'write' }}
 
       - name: Check out repository
         if: steps.gate.outputs.configured == 'true'
@@ -137,6 +149,7 @@ jobs:
         with:
           repository: ${{ inputs.repository || github.repository }}
           ref: ${{ inputs.base_branch }}
+          token: ${{ steps.app-token.outputs.token }}
           # Full history: --update diffs from the gitHead recorded in
           # openwiki/.last-update.json; depth-1 strands it after the first PR.
           fetch-depth: 0
@@ -161,15 +174,26 @@ jobs:
         if: steps.gate.outputs.configured == 'true' && inputs.dry_run && inputs.from_scratch
         run: rm -rf openwiki
 
+      # Haiku 5.5 on openwiki 0.3.3 sometimes stops before writing any page
+      # yet records status "complete": 11 of 14 first builds in CI on
+      # 2026-10-08 left only openwiki/index.md (reported by Reese Herber).
+      # A first build that comes out empty is retried once from scratch.
       - name: Run OpenWiki
+        id: run
         if: steps.gate.outputs.configured == 'true'
         env:
-          OPENWIKI_MODEL_ID: ${{ inputs.model_id }}
+          MODEL_ID: ${{ inputs.model_id }}
+          FIRST_BUILD_MODEL_ID: ${{ inputs.first_build_model_id }}
           BEDROCK_KEY: ${{ secrets.BEDROCK_API_KEY }}
           OPENWIKI_TELEMETRY_DISABLED: "1"
           DO_NOT_TRACK: "1"
         run: |
-          case "$OPENWIKI_MODEL_ID" in
+          first_build=false
+          [ -f openwiki/.last-update.json ] || first_build=true
+          model="$MODEL_ID"
+          if [ "$first_build" = true ] && [ -n "$FIRST_BUILD_MODEL_ID" ]; then model="$FIRST_BUILD_MODEL_ID"; fi
+          export OPENWIKI_MODEL_ID="$model"
+          case "$model" in
             *anthropic.claude*)
               export OPENWIKI_PROVIDER=anthropic
               export ANTHROPIC_BASE_URL=https://bedrock-runtime.us-west-2.amazonaws.com/anthropic
@@ -181,13 +205,21 @@ jobs:
               export OPENAI_COMPATIBLE_API_KEY="$BEDROCK_KEY"
               ;;
           esac
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          echo "first_build=$first_build" >> "$GITHUB_OUTPUT"
           openwiki code --update --print
+          pages=$(find openwiki -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$first_build" = true ] && [ "$pages" -le 2 ]; then
+            echo "::warning::First build produced $pages page(s) with $model; retrying once from scratch."
+            rm -rf openwiki
+            openwiki code --update --print
+          fi
 
       # openwiki can exit 0 without finishing; never open a PR for a partial wiki.
       - name: Verify the run completed
         if: steps.gate.outputs.configured == 'true'
         env:
-          OPENWIKI_MODEL_ID: ${{ inputs.model_id }}
+          FIRST_BUILD: ${{ steps.run.outputs.first_build }}
         run: |
           meta=openwiki/.last-update.json
           test -f "$meta" || { echo "::error::$meta missing after the run"; exit 1; }
@@ -195,7 +227,10 @@ jobs:
           status=$(jq -r .status "$meta")
           [ "$status" = complete ] || { echo "::error::OpenWiki status is '$status', expected 'complete'"; exit 1; }
           pages=$(find openwiki -name '*.md' | wc -l | tr -d ' ')
-          echo "OpenWiki: $pages pages, model $(jq -r .model "$meta"), gitHead $(jq -r .gitHead "$meta")" >> "$GITHUB_STEP_SUMMARY"
+          echo "OpenWiki: $pages pages (first build: $FIRST_BUILD), model $(jq -r .model "$meta"), gitHead $(jq -r .gitHead "$meta")" >> "$GITHUB_STEP_SUMMARY"
+          # status says "complete" even when no page was written; an index
+          # alone is not a wiki.
+          [ "$pages" -gt 2 ] || { echo "::error::OpenWiki wrote only $pages page(s); not opening a PR for an empty wiki."; exit 1; }
 
       - name: Create OpenWiki update pull request
         if: steps.gate.outputs.configured == 'true' && !inputs.dry_run
@@ -210,7 +245,7 @@ jobs:
           title: "docs: update OpenWiki"
           body: |
             Automated OpenWiki documentation update via the org reusable
-            workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ inputs.openwiki_version }}, model ${{ inputs.model_id }}).
+            workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ inputs.openwiki_version }}, model ${{ steps.run.outputs.model }}).
             Scoped to `openwiki/` only.
 
       # Docs flow all the way through: the PR satisfies PR-required rulesets,
