@@ -45,7 +45,11 @@ on:
       first_build_model_id:
         description: "Model for a first build (no openwiki/ yet). Empty = model_id"
         type: string
-        default: ""
+        # Sonnet 5.5 for first builds: in CI on 2026-10-08, Haiku 5.5 left an
+        # empty wiki on 3 of 4 first-build attempts (proxmox-mcp,
+        # freshservice-mcp) and on 11 of 14 earlier rollout repos; Sonnet 5.5
+        # built both test repos on the first try. Updates stay on model_id.
+        default: "us.anthropic.claude-sonnet-5-5"
       openwiki_version:
         description: "Override the org pin ONLY for testing a new release"
         type: string
