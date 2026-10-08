@@ -1,5 +1,6 @@
 # Smoke test for reusable-openwiki.yml: runs the PR's version of the reusable
-# against psd401/psd-standards-canary with dry_run (no PR, no app token).
+# against psd401/psd-standards-canary with dry_run (no PR, no app token),
+# twice: updating the canary's committed wiki, and building one from scratch.
 # Every OpenWiki pin bump or model change must pass this before merge,
 # because all callers use the reusable at @main.
 name: OpenWiki smoke test
@@ -16,6 +17,12 @@ permissions:
 
 jobs:
   canary:
+    # Both paths, because 0.7.1 passed a first build and failed every update
+    # of an existing wiki (2026-10-08).
+    strategy:
+      fail-fast: false
+      matrix:
+        from_scratch: [true, false]
     permissions:
       contents: write # the reusable declares write; dry_run never pushes
       pull-requests: write
@@ -24,4 +31,5 @@ jobs:
       repository: psd401/psd-standards-canary
       base_branch: main
       dry_run: true
+      from_scratch: ${{ matrix.from_scratch }}
     secrets: inherit # zizmor: ignore[secrets-inherit] same-repo reusable; needs BEDROCK_API_KEY
