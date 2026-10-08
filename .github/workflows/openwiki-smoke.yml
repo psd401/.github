@@ -10,7 +10,22 @@ on:
     paths:
       - .github/workflows/reusable-openwiki.yml
       - .github/workflows/openwiki-smoke.yml
+  # Manual model test against any repo (dry run: nothing is pushed), e.g.
+  # repository=psd401/proxmox-mcp model=us.anthropic.claude-sonnet-5-5.
   workflow_dispatch:
+    inputs:
+      repository:
+        description: "Repo to build (owner/name)"
+        type: string
+        default: psd401/psd-standards-canary
+      branch:
+        description: "Branch to build"
+        type: string
+        default: main
+      model:
+        description: "Model or inference-profile ID (empty = the reusable's default)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -22,14 +37,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        from_scratch: [true, false]
+        # A manual model test only needs the first build.
+        from_scratch: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[true]' || '[true, false]') }}
     permissions:
-      contents: write # the reusable declares write; dry_run never pushes
-      pull-requests: write
+      contents: read
+      pull-requests: read
     uses: ./.github/workflows/reusable-openwiki.yml
     with:
-      repository: psd401/psd-standards-canary
-      base_branch: main
+      repository: ${{ inputs.repository || 'psd401/psd-standards-canary' }}
+      base_branch: ${{ inputs.branch || 'main' }}
+      first_build_model_id: ${{ inputs.model }}
       dry_run: true
       from_scratch: ${{ matrix.from_scratch }}
     secrets: inherit # zizmor: ignore[secrets-inherit] same-repo reusable; needs BEDROCK_API_KEY
