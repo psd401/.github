@@ -45,7 +45,11 @@ on:
       openwiki_version:
         description: "Override the org pin ONLY for testing a new release"
         type: string
-        default: "0.7.1"
+        # 0.7.1 + Claude Haiku 5.5 fails on repos that already have a wiki:
+        # "Repository planning worker exited without submit_plan" (all four
+        # repos that ran on 2026-10-08). 0.3.3 + Haiku 5.5 passes. Stay here
+        # until a newer release passes both smoke-test cases.
+        default: "0.3.3"
       auto_merge:
         description: "Merge the docs PR immediately without human review (docs-only, add-paths capped — the safe-to-automate class per standards/09)"
         type: boolean
@@ -56,6 +60,10 @@ on:
         default: ""
       dry_run:
         description: "Generate and verify the wiki, but open no PR (smoke test)"
+        type: boolean
+        default: false
+      from_scratch:
+        description: "Delete openwiki/ before the run to test a first build (smoke test only; needs dry_run)"
         type: boolean
         default: false
 
@@ -122,6 +130,10 @@ jobs:
         env:
           OW_VERSION: ${{ inputs.openwiki_version }}
         run: npm install --global "openwiki@${OW_VERSION}"
+
+      - name: Remove existing wiki (from-scratch smoke test)
+        if: steps.gate.outputs.configured == 'true' && inputs.dry_run && inputs.from_scratch
+        run: rm -rf openwiki
 
       - name: Run OpenWiki
         if: steps.gate.outputs.configured == 'true'
