@@ -7,10 +7,22 @@
 # full-fetch for --update's gitHead diff, telemetry off, SHA-pinned PR action,
 # add-paths cap so generated content can't touch anything but openwiki/.
 #
-# LLM serving: Bedrock's OpenAI-compatible endpoint (spend lands on the
-# district AWS account). Do NOT switch to OPENWIKI_PROVIDER=anthropic on the
-# Bedrock /anthropic path — openwiki's @langchain/anthropic layer sends
-# request-top-level cache_control that Bedrock's compat layer rejects.
+# LLM serving: Amazon Bedrock with the org BEDROCK_API_KEY (spend lands on
+# the district AWS account). The provider follows model_id:
+# - Claude (default, us.anthropic.claude-haiku-5-5): OpenWiki's anthropic
+#   provider against Bedrock's Anthropic-compatible endpoint. Bedrock's
+#   OpenAI-compatible endpoint returns model_not_found for Claude, and as of
+#   2026-10-07 the Anthropic-compatible one accepts the request-top-level
+#   cache_control that it used to reject (psd-dev-standards
+#   audit/openwiki-2026-10-07.md).
+# - Anything else (e.g. zai.glm-5): Bedrock's OpenAI-compatible endpoint.
+# Use a us.* inference profile for Claude: on-demand foundation-model IDs are
+# rejected and the global.* profile is denied by the org SCP.
+#
+# Version pin: openwiki_version below. A weekly job in this repo
+# (openwiki-version-check.yml) opens an issue when npm has a newer release, and
+# openwiki-smoke.yml runs this workflow against psd-standards-canary on the
+# bump PR before anyone merges it.
 #
 # Caller prerequisites: BEDROCK_API_KEY + PSD_AUTOMATION_APP_PRIVATE_KEY org
 # secrets (call with `secrets: inherit`). PR creation and self-merge run as
@@ -27,17 +39,25 @@ on:
         type: string
         required: true
       model_id:
-        description: "Model via Bedrock's OpenAI-compatible endpoint"
+        description: "Bedrock model or inference-profile ID. Claude IDs use the Anthropic-compatible endpoint; others use the OpenAI-compatible one"
         type: string
-        default: "zai.glm-5"
+        default: "us.anthropic.claude-haiku-5-5"
       openwiki_version:
         description: "Override the org pin ONLY for testing a new release"
         type: string
-        default: "0.3.3"
+        default: "0.7.1"
       auto_merge:
         description: "Merge the docs PR immediately without human review (docs-only, add-paths capped — the safe-to-automate class per standards/09)"
         type: boolean
         default: true
+      repository:
+        description: "Repo to document (default: the caller). The smoke test uses psd401/psd-standards-canary"
+        type: string
+        default: ""
+      dry_run:
+        description: "Generate and verify the wiki, but open no PR (smoke test)"
+        type: boolean
+        default: false
 
 concurrency:
   group: openwiki-update-${{ github.repository }}
@@ -66,7 +86,7 @@ jobs:
           fi
 
       - name: Mint automation app token
-        if: steps.gate.outputs.configured == 'true'
+        if: steps.gate.outputs.configured == 'true' && !inputs.dry_run
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -81,6 +101,7 @@ jobs:
         if: steps.gate.outputs.configured == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          repository: ${{ inputs.repository || github.repository }}
           ref: ${{ inputs.base_branch }}
           # Full history: --update diffs from the gitHead recorded in
           # openwiki/.last-update.json; depth-1 strands it after the first PR.
@@ -104,17 +125,42 @@ jobs:
 
       - name: Run OpenWiki
         if: steps.gate.outputs.configured == 'true'
-        run: openwiki code --update --print
         env:
-          OPENWIKI_PROVIDER: openai-compatible
           OPENWIKI_MODEL_ID: ${{ inputs.model_id }}
-          OPENAI_COMPATIBLE_BASE_URL: https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1
-          OPENAI_COMPATIBLE_API_KEY: ${{ secrets.BEDROCK_API_KEY }}
+          BEDROCK_KEY: ${{ secrets.BEDROCK_API_KEY }}
           OPENWIKI_TELEMETRY_DISABLED: "1"
           DO_NOT_TRACK: "1"
+        run: |
+          case "$OPENWIKI_MODEL_ID" in
+            *anthropic.claude*)
+              export OPENWIKI_PROVIDER=anthropic
+              export ANTHROPIC_BASE_URL=https://bedrock-runtime.us-west-2.amazonaws.com/anthropic
+              export ANTHROPIC_API_KEY="$BEDROCK_KEY"
+              ;;
+            *)
+              export OPENWIKI_PROVIDER=openai-compatible
+              export OPENAI_COMPATIBLE_BASE_URL=https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1
+              export OPENAI_COMPATIBLE_API_KEY="$BEDROCK_KEY"
+              ;;
+          esac
+          openwiki code --update --print
+
+      # openwiki can exit 0 without finishing; never open a PR for a partial wiki.
+      - name: Verify the run completed
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          OPENWIKI_MODEL_ID: ${{ inputs.model_id }}
+        run: |
+          meta=openwiki/.last-update.json
+          test -f "$meta" || { echo "::error::$meta missing after the run"; exit 1; }
+          jq . "$meta"
+          status=$(jq -r .status "$meta")
+          [ "$status" = complete ] || { echo "::error::OpenWiki status is '$status', expected 'complete'"; exit 1; }
+          pages=$(find openwiki -name '*.md' | wc -l | tr -d ' ')
+          echo "OpenWiki: $pages pages, model $(jq -r .model "$meta"), gitHead $(jq -r .gitHead "$meta")" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create OpenWiki update pull request
-        if: steps.gate.outputs.configured == 'true'
+        if: steps.gate.outputs.configured == 'true' && !inputs.dry_run
         id: docs-pr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
@@ -126,7 +172,7 @@ jobs:
           title: "docs: update OpenWiki"
           body: |
             Automated OpenWiki documentation update via the org reusable
-            workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ inputs.openwiki_version }}).
+            workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ inputs.openwiki_version }}, model ${{ inputs.model_id }}).
             Scoped to `openwiki/` only.
 
       # Docs flow all the way through: the PR satisfies PR-required rulesets,

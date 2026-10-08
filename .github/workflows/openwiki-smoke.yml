@@ -1,0 +1,27 @@
+# Smoke test for reusable-openwiki.yml: runs the PR's version of the reusable
+# against psd401/psd-standards-canary with dry_run (no PR, no app token).
+# Every OpenWiki pin bump or model change must pass this before merge,
+# because all callers use the reusable at @main.
+name: OpenWiki smoke test
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/reusable-openwiki.yml
+      - .github/workflows/openwiki-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    permissions:
+      contents: write # the reusable declares write; dry_run never pushes
+      pull-requests: write
+    uses: ./.github/workflows/reusable-openwiki.yml
+    with:
+      repository: psd401/psd-standards-canary
+      base_branch: main
+      dry_run: true
+    secrets: inherit # zizmor: ignore[secrets-inherit] same-repo reusable; needs BEDROCK_API_KEY
