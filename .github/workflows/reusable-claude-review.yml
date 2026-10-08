@@ -43,13 +43,33 @@ jobs:
       issues: read
       id-token: write
     steps:
+      # Generated wiki PRs (openwiki/ only) aren't reviewed: they're capped to
+      # docs, and a 38-file wiki rebuild ran the reviewer out of turns
+      # (psd-device-repair-manager#13, 2026-10-08). Decision: Kris, 2026-10-08.
+      - name: Skip OpenWiki-only PRs
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
+          other=$(printf '%s\n' "$files" | grep -v -c '^openwiki/' || true)
+          if [ -n "$files" ] && [ "$other" -eq 0 ]; then
+            echo "Only openwiki/ changed; skipping review." >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
+        if: steps.scope.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 1
 
       - name: Run Claude Code Review
+        if: steps.scope.outputs.skip != 'true'
         uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
