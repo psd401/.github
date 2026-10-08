@@ -3,13 +3,17 @@ on:
   workflow_dispatch:
   push:
     branches: [$default-branch]
+    # The auto-merged docs PR only touches openwiki/; don't rebuild for it.
+    # (The reusable also skips wiki-only pushes; this saves starting a run.)
+    paths-ignore:
+      - "openwiki/**"
   schedule:
     - cron: "0 8 * * 1"
 jobs:
   openwiki:
     permissions:
-      contents: write # caller must grant; org default token is read-only and reusables cannot elevate
-      pull-requests: write
+      contents: read # the reusable only reads with GITHUB_TOKEN; writes use the psd-automation App
+      pull-requests: read
     uses: PSD401/.github/.github/workflows/reusable-openwiki.yml@main
     with:
       base_branch: $default-branch
