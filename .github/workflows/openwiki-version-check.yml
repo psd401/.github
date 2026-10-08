@@ -1,0 +1,71 @@
+# Weekly: if npm has a newer openwiki than the org pin in reusable-openwiki.yml,
+# open (or update) one issue in this repo asking for a bump. The bump PR runs
+# openwiki-smoke.yml against psd-standards-canary; merge it once that passes.
+# Merging updates every repo, since callers use the reusable at @main.
+#
+# Why an issue and not a bot PR: editing a file under .github/workflows needs
+# the GitHub App "workflows" permission, and psd-automation doesn't have it.
+# Granting it would let the bot rewrite CI in every repo.
+name: OpenWiki version check
+
+on:
+  schedule:
+    - cron: "0 15 * * 1" # Mondays 15:00 UTC, after the 08:00 UTC wiki runs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: openwiki-version-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Compare pin with npm latest
+        id: versions
+        run: |
+          file=.github/workflows/reusable-openwiki.yml
+          current=$(awk '/openwiki_version:/{f=1} f && /default:/{gsub(/[" ]/,"",$2); print $2; exit}' "$file")
+          latest=$(curl -fsS https://registry.npmjs.org/openwiki | jq -r '."dist-tags".latest')
+          [ -n "$current" ] && [ -n "$latest" ] || { echo "::error::could not read versions (current='$current' latest='$latest')"; exit 1; }
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "OpenWiki pin $current; npm latest $latest." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the bump issue
+        if: steps.versions.outputs.current != steps.versions.outputs.latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.versions.outputs.current }}
+          LATEST: ${{ steps.versions.outputs.latest }}
+        run: |
+          gh label create openwiki:version-bump --repo "$GITHUB_REPOSITORY" --color 0E8A16 \
+            --description "A newer openwiki release is available" 2>/dev/null || true
+          title="OpenWiki $LATEST is available (org pin $CURRENT)"
+          body=$(cat <<BODY
+          npm has openwiki **$LATEST**; the org pin in \`.github/workflows/reusable-openwiki.yml\` is **$CURRENT**.
+
+          To bump:
+          1. Open a PR changing \`openwiki_version\`'s \`default\` to \`"$LATEST"\`.
+          2. Wait for **OpenWiki smoke test** (psd-standards-canary) to pass.
+          3. Merge. Every repo picks it up on its next OpenWiki run.
+
+          Release history: https://www.npmjs.com/package/openwiki?activeTab=versions
+          BODY
+          )
+          n=$(gh issue list --repo "$GITHUB_REPOSITORY" --label openwiki:version-bump --state open --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue edit "$n" --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --label openwiki:version-bump --body "$body"
+          fi
