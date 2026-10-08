@@ -71,9 +71,12 @@ concurrency:
   group: openwiki-update-${{ github.repository }}
   cancel-in-progress: false
 
+# GITHUB_TOKEN only reads: checkout runs with persist-credentials false, and
+# the PR and merge go through the psd-automation App token below. Callers may
+# still grant write; a called workflow can always ask for less.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 jobs:
   run:
@@ -81,17 +84,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Check provider secret
+      # "configured" gates every later step. It is false when the provider
+      # secret is missing, or when a push changed only openwiki/: the
+      # auto-merged docs PR is pushed with the App token, which triggers the
+      # caller again, so without this each docs merge re-ran the build
+      # (psd-standards-canary: 2 extra rounds per change, 2026-10-08; reported
+      # by Reese Herber).
+      - name: Check provider secret and skip wiki-only pushes
         id: gate
         env:
           BEDROCK_KEY: ${{ secrets.BEDROCK_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          REPO: ${{ inputs.repository || github.repository }}
         run: |
           if [ -z "$BEDROCK_KEY" ]; then
             echo "BEDROCK_API_KEY not configured — skipping OpenWiki update."
             echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          if [ "$EVENT" = push ] && [ -n "$BEFORE" ] && [ -n "$AFTER" ] \
+             && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            # compare lists at most 300 files; anything that fails or looks
+            # truncated runs the build as usual.
+            if files=$(gh api "repos/$REPO/compare/$BEFORE...$AFTER" --jq '.files[].filename' 2>/dev/null) \
+               && [ -n "$files" ] && [ "$(printf '%s\n' "$files" | wc -l)" -lt 300 ] \
+               && ! printf '%s\n' "$files" | grep -qv '^openwiki/'; then
+              echo "This push changed only openwiki/ — skipping the rebuild." | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "configured=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Mint automation app token
         if: steps.gate.outputs.configured == 'true' && !inputs.dry_run
