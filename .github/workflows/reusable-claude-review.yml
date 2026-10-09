@@ -6,17 +6,21 @@
 # - Cost control: callers trigger on [opened, ready_for_review, reopened] —
 #   NOT `synchronize`. Re-review on demand with `@claude review`.
 # - Severity-tiered output, ≤5 nits, file:line evidence for behavior claims.
-# - Auth preference: org/repo ANTHROPIC_API_KEY (org billing); falls back to
-#   CLAUDE_CODE_OAUTH_TOKEN for repos still on a personal subscription token.
+# - Model serving: Amazon Bedrock (us-west-2) with the org BEDROCK_API_KEY,
+#   the same key and account OpenWiki uses, so spend lands on the district's
+#   AWS bill. Decision: Kris, 2026-10-08. Until then reviews ran on a personal
+#   CLAUDE_CODE_OAUTH_TOKEN; repo-level copies of that token overrode the org
+#   one and failed every run in aistudio and psd-claude-plugins. The `global.`
+#   inference profiles are blocked by SCP, so the model ID uses `us.`.
 name: Reusable Claude Review
 
 on:
   workflow_call:
     inputs:
       model:
-        description: "Model for review (default Sonnet-class for cost)"
+        description: "Bedrock model ID for review (default Sonnet-class for cost)"
         type: string
-        default: "claude-sonnet-5"
+        default: "us.anthropic.claude-sonnet-5-5"
       max_turns:
         # 30 ran out on large PRs: psd-athletics#11 (+2,864 lines, 19 files)
         # and xcreds-psd (2026-09-14) both failed with error_max_turns.
@@ -72,10 +76,12 @@ jobs:
 
       - name: Run Claude Code Review
         if: steps.scope.outputs.skip != 'true'
-        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+        uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247 (Claude Code 2.1.295; Sonnet 5.5 needs >= 2.1.280)
+        env:
+          AWS_REGION: us-west-2
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.BEDROCK_API_KEY }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          use_bedrock: "true"
           allowed_bots: "dependabot"
           prompt: |
             Review this pull request per PSD engineering standards:
