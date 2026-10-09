@@ -18,9 +18,12 @@ on:
   workflow_call:
     inputs:
       model:
-        description: "Bedrock model ID for review (default Sonnet-class for cost)"
+        # Haiku 5.5 matched Sonnet 5.5 on 10 graded PRs (5 vs 4 real
+        # defects, 1 wrong finding each) at ~1/8 the logged cost; decision
+        # Kris, 2026-10-09. Every repo uses the default.
+        description: "Bedrock model ID for review"
         type: string
-        default: "us.anthropic.claude-sonnet-5-5"
+        default: "us.anthropic.claude-haiku-5-5"
       max_turns:
         # 30 ran out on large PRs: psd-athletics#11 (+2,864 lines, 19 files)
         # and xcreds-psd (2026-09-14) both failed with error_max_turns.
@@ -107,6 +110,9 @@ jobs:
 
             Use the repository's CLAUDE.md for conventions. If the diff is
             clean, say so briefly — do not invent findings.
+
+            You cannot run code, tests, linters or builds here. Never say you
+            ran them or report their results; say what you read instead.
             ${{ inputs.extra_prompt }}
 
             Use `gh pr comment` with your Bash tool to leave the review as a
