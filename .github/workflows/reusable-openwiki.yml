@@ -263,6 +263,17 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR: ${{ steps.docs-pr.outputs.pull-request-number }}
+        # Merge now if GitHub allows it. In repos with required status checks
+        # the checks haven't run yet, so GitHub refuses (reported by Mason
+        # Pratz on classlink-mcp #18, 2026-10-08); then queue an auto-merge,
+        # which needs the repo setting "Allow auto-merge". If neither works
+        # (setting off, or a required review), the PR stays open.
         run: |
-          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch \
-            || echo "::warning::Docs PR #$PR could not auto-merge (likely a required review on this tier) — left open for human merge."
+          if gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch; then
+            exit 0
+          fi
+          if gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --auto; then
+            echo "Docs PR #$PR will merge when its required checks pass." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Docs PR #$PR could not merge now or queue auto-merge (repo setting 'Allow auto-merge' off, or a required review) — left open for a human to merge."
+          fi
