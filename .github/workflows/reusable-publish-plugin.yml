@@ -37,6 +37,10 @@ on:
         description: "Marketplace repo to publish to"
         type: string
         default: "psd401/psd-claude-plugins"
+      auto_merge:
+        description: "Merge the publish PR without review in the marketplace; review happens in the calling repo before its default branch changes"
+        type: boolean
+        default: true
       dry_run:
         description: "Copy and validate, but open no PR (read-only token)"
         type: boolean
@@ -166,7 +170,7 @@ jobs:
       # auto-merge (needs the repo setting "Allow auto-merge"), else leave the
       # PR open for a human.
       - name: Merge the publish pull request
-        if: steps.publish-pr.outputs.pull-request-number != ''
+        if: inputs.auto_merge && steps.publish-pr.outputs.pull-request-number != ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR: ${{ steps.publish-pr.outputs.pull-request-number }}
