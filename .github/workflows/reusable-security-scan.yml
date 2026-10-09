@@ -39,7 +39,10 @@ jobs:
             || { echo "::error::gitleaks found potential secrets (redacted above)"; exit 1; }
   dependency-review:
     name: dependency-review
-    if: github.event_name == 'pull_request'
+    # Dependency review needs GitHub Code Security on private and internal
+    # repos, which PSD401 doesn't have (85 of 106 live repos, 2026-10-08);
+    # there the action fails every PR. Public repos get it free.
+    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
