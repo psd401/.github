@@ -1,0 +1,6 @@
+{
+  "name": "PSD Security Scan",
+  "description": "gitleaks (full git history), zizmor (workflow audit), and dependency review on public-repo PRs (standards/04-security.md)",
+  "iconName": "shield",
+  "categories": ["security"]
+}
