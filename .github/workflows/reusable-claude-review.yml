@@ -18,9 +18,11 @@ on:
         type: string
         default: "claude-sonnet-5"
       max_turns:
+        # 30 ran out on large PRs: psd-athletics#11 (+2,864 lines, 19 files)
+        # and xcreds-psd (2026-09-14) both failed with error_max_turns.
         description: "Hard cap on agent turns"
         type: number
-        default: 30
+        default: 60
       extra_prompt:
         description: "Repo-specific review instructions appended to the standard prompt"
         type: string
