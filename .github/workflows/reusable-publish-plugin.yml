@@ -1,0 +1,182 @@
+# ABOUTME: Reusable workflow that publishes a repo's Claude Code plugin to a PSD plugin marketplace.
+# ABOUTME: Copies the plugin in with scripts/publish-plugin.sh, then opens and merges a PR as psd-automation.
+#
+# For plugins whose source lives in a private repo (usually beside the server
+# they talk to) but that staff without GitHub access must be able to install.
+# Claude Code clones a plugin's source on each person's machine, so a
+# marketplace entry pointing into a private repo only installs for people with
+# GitHub access to it. This copies the plugin into the marketplace instead.
+# Plugins with no reason to live elsewhere belong in the marketplace repo
+# directly. Standard: psd-dev-standards standards/06 (Claude Code plugins).
+#
+# What it changes in the marketplace: plugins/<name>/ (with a .publish-source
+# file naming the calling repo) and that plugin's marketplace.json entry,
+# added on first publish and given the new version after. Never another
+# plugin, metadata.version or the changelog. It refuses a plugin.json without
+# a version, a change without a version bump, and a name another repo or the
+# marketplace's maintainers already use (see scripts/publish-plugin.sh).
+#
+# Caller prerequisites: the PSD_AUTOMATION_APP_PRIVATE_KEY org secret, passed
+# by name, and the psd-automation App installed on the marketplace repo. The
+# PR and its merge run as the App, as in reusable-openwiki.yml. Nothing from
+# the calling repo is executed: its files are only copied and validated.
+name: Reusable Publish Plugin
+
+on:
+  workflow_call:
+    inputs:
+      plugin_path:
+        description: "Folder in the calling repo holding the plugin (the one with .claude-plugin/plugin.json)"
+        type: string
+        required: true
+      category:
+        description: "Marketplace category for the plugin's entry, used when it's first listed"
+        type: string
+        default: ""
+      marketplace:
+        description: "Marketplace repo to publish to"
+        type: string
+        default: "psd401/psd-claude-plugins"
+      dry_run:
+        description: "Copy and validate, but open no PR (read-only token)"
+        type: boolean
+        default: false
+      tooling_ref:
+        description: "Ref of PSD401/.github whose scripts/publish-plugin.sh runs. Override ONLY to test a change to it"
+        type: string
+        default: "main"
+    secrets:
+      # Optional so a repo without it skips cleanly (the gate step checks).
+      PSD_AUTOMATION_APP_PRIVATE_KEY:
+        required: false
+
+concurrency:
+  group: publish-plugin-${{ github.repository }}-${{ inputs.plugin_path }}-${{ inputs.dry_run }}
+  cancel-in-progress: false
+
+# GITHUB_TOKEN only reads the calling repo; writes to the marketplace use the
+# psd-automation App token below.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish-plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the automation key
+        id: gate
+        env:
+          APP_KEY: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
+          MARKETPLACE: ${{ inputs.marketplace }}
+        run: |
+          if [ -z "$APP_KEY" ]; then
+            echo "::warning::PSD_AUTOMATION_APP_PRIVATE_KEY not passed — skipping the publish."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "marketplace_name=${MARKETPLACE#*/}" >> "$GITHUB_OUTPUT"
+
+      # Scoped to the one marketplace repo; read-only on a dry run.
+      - name: Mint automation app token
+        if: steps.gate.outputs.configured == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PSD_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: PSD401
+          repositories: ${{ steps.gate.outputs.marketplace_name }}
+          permission-contents: ${{ inputs.dry_run && 'read' || 'write' }}
+          permission-pull-requests: ${{ inputs.dry_run && 'read' || 'write' }}
+
+      - name: Check out the calling repo
+        if: steps.gate.outputs.configured == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: source
+          persist-credentials: false
+
+      - name: Check out the publish script
+        if: steps.gate.outputs.configured == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: PSD401/.github
+          ref: ${{ inputs.tooling_ref }}
+          path: tooling
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Check out the marketplace
+        if: steps.gate.outputs.configured == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ inputs.marketplace }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: marketplace
+          persist-credentials: false
+
+      - name: Copy the plugin into the marketplace
+        if: steps.gate.outputs.configured == 'true'
+        id: copy
+        env:
+          PLUGIN_PATH: ${{ inputs.plugin_path }}
+          CATEGORY: ${{ inputs.category }}
+        run: |
+          bash tooling/scripts/publish-plugin.sh "source/$PLUGIN_PATH" marketplace "$GITHUB_REPOSITORY" "$CATEGORY" | tee -a "$GITHUB_OUTPUT"
+          {
+            echo "### Publish plugin"
+            git -C marketplace status --short
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node.js
+        if: steps.copy.outputs.changed == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      # The marketplace's own release rule: `claude plugin validate .` passes.
+      - name: Validate the marketplace
+        if: steps.copy.outputs.changed == 'true'
+        run: |
+          npm install --global @anthropic-ai/claude-code@2.1.293
+          cd marketplace && claude plugin validate .
+
+      - name: Create the publish pull request
+        if: steps.copy.outputs.changed == 'true' && !inputs.dry_run
+        id: publish-pr
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: marketplace
+          add-paths: |
+            plugins/${{ steps.copy.outputs.name }}
+            .claude-plugin/marketplace.json
+          branch: publish/${{ steps.copy.outputs.name }}
+          commit-message: "Publish ${{ steps.copy.outputs.name }} ${{ steps.copy.outputs.version }}"
+          title: "Publish ${{ steps.copy.outputs.name }} ${{ steps.copy.outputs.version }}"
+          body: |
+            Automated publish from ${{ github.repository }}@${{ github.sha }} (`${{ inputs.plugin_path }}`)
+            via the org reusable workflow (PSD401/.github → reusable-publish-plugin.yml).
+            Changes only `plugins/${{ steps.copy.outputs.name }}/` and its marketplace entry.
+
+      # As in reusable-openwiki.yml: merge now if GitHub allows it, else queue an
+      # auto-merge (needs the repo setting "Allow auto-merge"), else leave the
+      # PR open for a human.
+      - name: Merge the publish pull request
+        if: steps.publish-pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.publish-pr.outputs.pull-request-number }}
+          MARKETPLACE: ${{ inputs.marketplace }}
+        run: |
+          if gh pr merge "$PR" --repo "$MARKETPLACE" --squash --delete-branch; then
+            exit 0
+          fi
+          if gh pr merge "$PR" --repo "$MARKETPLACE" --squash --delete-branch --auto; then
+            echo "Publish PR #$PR will merge when its required checks pass." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Publish PR #$PR could not merge now or queue auto-merge — left open for a human to merge."
+          fi

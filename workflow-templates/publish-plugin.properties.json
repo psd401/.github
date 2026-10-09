@@ -1,0 +1,6 @@
+{
+  "name": "PSD Publish Claude Code Plugin",
+  "description": "Publish this repo's Claude Code plugin to the PSD plugin marketplace on each version bump",
+  "iconName": "package",
+  "categories": ["deployment"]
+}

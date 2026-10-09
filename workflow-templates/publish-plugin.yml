@@ -1,0 +1,20 @@
+# ABOUTME: Publishes this repo's Claude Code plugin to the PSD plugin marketplace when its folder changes on the default branch.
+# ABOUTME: Bump "version" in the plugin's plugin.json with every change; the publish refuses a change without one.
+name: Publish plugin
+on:
+  workflow_dispatch:
+  push:
+    branches: [$default-branch]
+    # The folder holding .claude-plugin/plugin.json; also set plugin_path below.
+    paths:
+      - "plugin/**"
+jobs:
+  publish:
+    permissions:
+      contents: read # the reusable only reads with GITHUB_TOKEN; writes use the psd-automation App
+    uses: PSD401/.github/.github/workflows/reusable-publish-plugin.yml@main
+    with:
+      plugin_path: plugin
+      category: productivity
+    secrets:
+      PSD_AUTOMATION_APP_PRIVATE_KEY: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
