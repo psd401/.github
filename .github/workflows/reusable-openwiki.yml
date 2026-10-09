@@ -25,7 +25,8 @@
 # bump PR before anyone merges it.
 #
 # Caller prerequisites: BEDROCK_API_KEY + PSD_AUTOMATION_APP_PRIVATE_KEY org
-# secrets (call with `secrets: inherit`). PR creation and self-merge run as
+# secrets, passed by name (not `secrets: inherit`, which hands the job every
+# secret; decision Kris, 2026-10-09). PR creation and self-merge run as
 # the psd-automation GitHub App — the org 'Actions can create/approve PRs'
 # toggle stays OFF (it only gates GITHUB_TOKEN); auditable bot identity per
 # standards/02 single-purpose-identity doctrine.
@@ -74,6 +75,14 @@ on:
         description: "Delete openwiki/ before the run to test a first build (smoke test only; needs dry_run)"
         type: boolean
         default: false
+    secrets:
+      # The only two secrets this workflow reads. Optional so a repo without
+      # them skips cleanly (the gate step checks); callers still on
+      # `secrets: inherit` keep working.
+      BEDROCK_API_KEY:
+        required: false
+      PSD_AUTOMATION_APP_PRIVATE_KEY:
+        required: false
 
 concurrency:
   # Smoke-test legs and manual model tests get their own groups, so they don't
