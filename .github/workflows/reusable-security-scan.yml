@@ -30,12 +30,13 @@ jobs:
             echo "no workflows to audit"
           fi
       - name: gitleaks — secret scan
-        if: inputs.run_gitleaks
+        # Runs even when zizmor fails, so one run reports both scanners.
+        if: ${{ !cancelled() && inputs.run_gitleaks }}
         env:
           GITLEAKS_VERSION: "8.24.0"
         run: |
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gl.tgz
-          tar -xzf gl.tgz gitleaks && ./gitleaks git --no-banner --redact --exit-code 1 . \
+          tar -xzf gl.tgz gitleaks && ./gitleaks git --no-banner --redact --verbose --exit-code 1 . \
             || { echo "::error::gitleaks found potential secrets (redacted above)"; exit 1; }
   dependency-review:
     name: dependency-review
