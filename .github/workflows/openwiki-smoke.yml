@@ -49,4 +49,6 @@ jobs:
       first_build_model_id: ${{ inputs.model }}
       dry_run: true
       from_scratch: ${{ matrix.from_scratch }}
-    secrets: inherit # zizmor: ignore[secrets-inherit] same-repo reusable; needs BEDROCK_API_KEY
+    secrets:
+      BEDROCK_API_KEY: ${{ secrets.BEDROCK_API_KEY }}
+      PSD_AUTOMATION_APP_PRIVATE_KEY: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
