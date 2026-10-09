@@ -31,6 +31,13 @@ on:
         description: "Repo-specific review instructions appended to the standard prompt"
         type: string
         default: ""
+    secrets:
+      # The only secret this workflow reads. Callers pass it by name rather
+      # than `secrets: inherit`, so the review job never receives the repo's
+      # other secrets (decision: Kris, 2026-10-09). Callers still on
+      # `inherit` keep working.
+      BEDROCK_API_KEY:
+        required: false
 
 jobs:
   run:
