@@ -22,7 +22,9 @@
 # plugins run code (hooks) on every machine that installs them; auto_merge
 # merges it at once instead. Publishes run only from a push or manual run on
 # the calling repo's default branch (dry runs from any branch), so a branch
-# nobody merged can't publish. Nothing from the calling repo is executed: its
+# nobody merged can't publish, and only when a ruleset on that branch requires
+# a pull request, so what's published went through the repo's PR checks
+# (scripts/requires-pull-requests.sh). Nothing from the calling repo is executed: its
 # files are only copied and validated.
 name: Reusable Publish Plugin
 
@@ -130,6 +132,15 @@ jobs:
           path: tooling
           sparse-checkout: scripts
           persist-credentials: false
+
+      - name: Check the calling repo requires pull requests
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/rules/branches/$DEFAULT_BRANCH" > rules.json || true
+          bash tooling/scripts/requires-pull-requests.sh rules.json "$GITHUB_REPOSITORY" "$DEFAULT_BRANCH"
 
       - name: Check out the marketplace
         if: steps.gate.outputs.configured == 'true'

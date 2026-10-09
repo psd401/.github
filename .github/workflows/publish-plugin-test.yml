@@ -1,4 +1,4 @@
-# ABOUTME: Runs scripts/publish-plugin.test.sh on PRs that change the plugin publish script or workflow.
+# ABOUTME: Runs the plugin publish scripts' tests on PRs that change them or the publish workflow.
 # ABOUTME: Every caller uses reusable-publish-plugin.yml at @main, so changes must pass here before merge.
 name: Publish plugin tests
 
@@ -7,6 +7,8 @@ on:
     paths:
       - scripts/publish-plugin.sh
       - scripts/publish-plugin.test.sh
+      - scripts/requires-pull-requests.sh
+      - scripts/requires-pull-requests.test.sh
       - .github/workflows/reusable-publish-plugin.yml
       - .github/workflows/publish-plugin-test.yml
 
@@ -22,3 +24,4 @@ jobs:
         with:
           persist-credentials: false
       - run: bash scripts/publish-plugin.test.sh
+      - run: bash scripts/requires-pull-requests.test.sh
