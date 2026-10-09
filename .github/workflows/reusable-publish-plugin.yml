@@ -1,5 +1,5 @@
 # ABOUTME: Reusable workflow that publishes a repo's Claude Code plugin to a PSD plugin marketplace.
-# ABOUTME: Copies the plugin in with scripts/publish-plugin.sh, then opens and merges a PR as psd-automation.
+# ABOUTME: Copies the plugin in with scripts/publish-plugin.sh, then opens a PR as psd-automation for a person to merge.
 #
 # For plugins whose source lives in a private repo (usually beside the server
 # they talk to) but that staff without GitHub access must be able to install.
@@ -18,8 +18,12 @@
 #
 # Caller prerequisites: the PSD_AUTOMATION_APP_PRIVATE_KEY org secret, passed
 # by name, and the psd-automation App installed on the marketplace repo. The
-# PR and its merge run as the App, as in reusable-openwiki.yml. Nothing from
-# the calling repo is executed: its files are only copied and validated.
+# PR runs as the App, as in reusable-openwiki.yml. A person merges it, since
+# plugins run code (hooks) on every machine that installs them; auto_merge
+# merges it at once instead. Publishes run only from a push or manual run on
+# the calling repo's default branch (dry runs from any branch), so a branch
+# nobody merged can't publish. Nothing from the calling repo is executed: its
+# files are only copied and validated.
 name: Reusable Publish Plugin
 
 on:
@@ -38,9 +42,9 @@ on:
         type: string
         default: "psd401/psd-claude-plugins"
       auto_merge:
-        description: "Merge the publish PR without review in the marketplace; review happens in the calling repo before its default branch changes"
+        description: "Merge the publish PR at once instead of leaving it for a person to merge"
         type: boolean
-        default: true
+        default: false
       dry_run:
         description: "Copy and validate, but open no PR (read-only token)"
         type: boolean
@@ -69,12 +73,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check the automation key
+      - name: Check the trigger and the automation key
         id: gate
         env:
           APP_KEY: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
           MARKETPLACE: ${{ inputs.marketplace }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          if [ "$DRY_RUN" != true ]; then
+            case "$EVENT" in
+              push|workflow_dispatch) ;;
+              *) echo "::error::Publishes run only from a push or manual run, not '$EVENT'."; exit 1 ;;
+            esac
+            if [ -z "$DEFAULT_BRANCH" ] || [ "$REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+              echo "::error::Publishes run only from the default branch ($DEFAULT_BRANCH), not $REF."
+              exit 1
+            fi
+          fi
           if [ -z "$APP_KEY" ]; then
             echo "::warning::PSD_AUTOMATION_APP_PRIVATE_KEY not passed — skipping the publish."
             echo "configured=false" >> "$GITHUB_OUTPUT"
