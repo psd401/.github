@@ -1,0 +1,28 @@
+# Reports a passing `claude-review / claude-review` check on Dependabot PRs.
+# Callers: see workflow-templates/claude-review.yml (the `claude-review-dependabot` job).
+#
+# Why: `claude-review / claude-review` is a required check on production repos
+# (psd-production ruleset), but Dependabot PRs aren't reviewed. The caller
+# can't call reusable-claude-review.yml for them: Dependabot-triggered runs
+# can't grant its `id-token: write`, which fails the run at startup. Skipping
+# the caller job instead reports a check named `claude-review` (skipped),
+# which never satisfies the required `claude-review / claude-review`
+# (cte-budget#33, 2026-10-09), so every Dependabot PR on a production repo
+# would be unmergeable. This workflow needs no permissions, secrets or
+# actions; its job name plus the caller job's name produce the required
+# context.
+name: Reusable Claude Review (Dependabot skip)
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  run:
+    name: claude-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Record the skip
+        run: echo "Dependabot PR; Claude review skipped (standards/03-code-review.md)." >> "$GITHUB_STEP_SUMMARY"
