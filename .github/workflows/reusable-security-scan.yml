@@ -36,8 +36,32 @@ jobs:
           GITLEAKS_VERSION: "8.24.0"
         run: |
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gl.tgz
-          tar -xzf gl.tgz gitleaks && ./gitleaks git --no-banner --redact --verbose --exit-code 1 . \
-            || { echo "::error::gitleaks found potential secrets (redacted above)"; exit 1; }
+          tar -xzf gl.tgz gitleaks
+          # Org rules: gitleaks' defaults plus student Google accounts (a
+          # digit-only local part @edtools.psd401.net is the student number;
+          # FERPA). From discipline's .gitleaks.toml (James Cantonwine),
+          # adopted org-wide 2026-10-09. Its 7-digit student-number rule stays
+          # opt-in: org-wide it matched 35,353 mostly ordinary numbers.
+          # A repo with its own .gitleaks.toml keeps it (passing --config would
+          # override it); that file should extend the defaults and add these.
+          cat > "$RUNNER_TEMP/psd-gitleaks.toml" <<'TOML'
+          [extend]
+          useDefault = true
+
+          [[rules]]
+          id = "psd-student-numeric-email"
+          description = "A student Google account: digit-only local part @edtools.psd401.net (the student number). Use a synthetic id (1000xxx) instead."
+          regex = '''\b([0-9]{4,10})@edtools\.psd401\.net\b'''
+          secretGroup = 1
+          tags = ["student-pii"]
+          TOML
+          cfg=(--config "$RUNNER_TEMP/psd-gitleaks.toml")
+          if [ -f .gitleaks.toml ]; then
+            echo "Using this repo's .gitleaks.toml"
+            cfg=()
+          fi
+          ./gitleaks git --no-banner --redact --verbose --exit-code 1 "${cfg[@]}" . \
+            || { echo "::error::gitleaks found potential secrets or student data (redacted above)"; exit 1; }
   dependency-review:
     name: dependency-review
     # Dependency review needs GitHub Code Security on private and internal
