@@ -1,10 +1,15 @@
 # Reusable Claude code review — the org-standard AI PR reviewer.
-# Callers: see workflow-templates/claude-review.yml. Call with `secrets: inherit`.
+# Callers: see workflow-templates/claude-review.yml. Pass BEDROCK_API_KEY by name.
 #
 # Standards applied (psd-dev-standards/standards/03-code-review.md):
-# - AI review is triage, never approval; this check is advisory.
-# - Cost control: callers trigger on [opened, ready_for_review, reopened] —
-#   NOT `synchronize`. Re-review on demand with `@claude review`.
+# - The review runs on every push to a PR: callers trigger on [opened,
+#   synchronize, ready_for_review, reopened]. It is a required check on
+#   production repos (psd-production ruleset), and its IMPORTANT findings are
+#   fixed before merge where reasonable, not treated as advisory. Decision:
+#   Kris, 2026-10-10. A review is not a human approval.
+# - Cost: about $0.013 per review on Haiku 5.5, so a review per push stays at a
+#   few dollars a month. The concurrency group below cancels a review that a
+#   newer push supersedes.
 # - Severity-tiered output, ≤5 nits, file:line evidence for behavior claims.
 # - Model serving: Amazon Bedrock (us-west-2) with the org BEDROCK_API_KEY,
 #   the same key and account OpenWiki uses, so spend lands on the district's
@@ -114,6 +119,7 @@ jobs:
             You cannot run code, tests, linters or builds here. Never say you
             ran them or report their results; say what you read instead.
             ${{ inputs.extra_prompt }}
+            ${{ github.event.action == 'synchronize' && 'This is a re-review after new commits. Read your earlier review comment on this PR (gh pr view --comments). Post only IMPORTANT findings that are new or still unresolved, say which earlier IMPORTANT findings are now fixed, and skip nits.' || '' }}
 
             Use `gh pr comment` with your Bash tool to leave the review as a
             single PR comment.
