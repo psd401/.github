@@ -92,7 +92,10 @@ jobs:
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.BEDROCK_API_KEY }}
         with:
           use_bedrock: "true"
-          allowed_bots: "dependabot"
+          # psd-automation opens the plugin publish PRs (reusable-publish-plugin.yml),
+          # whose merge is the last check before a plugin goes public. It's the
+          # org's own App, so its PRs carry no outside prompts.
+          allowed_bots: "dependabot,psd-automation"
           prompt: |
             Review this pull request per PSD engineering standards:
 
