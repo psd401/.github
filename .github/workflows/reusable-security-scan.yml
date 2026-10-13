@@ -54,6 +54,14 @@ jobs:
           regex = '''\b([0-9]{4,10})@edtools\.psd401\.net\b'''
           secretGroup = 1
           tags = ["student-pii"]
+
+          # The synthetic ids the description recommends (1000000-1000999)
+          # match the regex too, so allow them here; gitleaks has no lookahead.
+          # Defect found by Brad White, 2026-10-12.
+          [[rules.allowlists]]
+          description = "Synthetic student ids (1000xxx), the documented replacement"
+          regexTarget = "match"
+          regexes = ['''\b1000[0-9]{3}@edtools\.psd401\.net\b''']
           TOML
           cfg=(--config "$RUNNER_TEMP/psd-gitleaks.toml")
           if [ -f .gitleaks.toml ]; then
