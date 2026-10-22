@@ -33,8 +33,22 @@ until it is released.
 Dependabot proposes majors too; the caller's reviewer reads the release notes
 before merging one.
 
-## Known gap
+## What a pinned caller gets
 
-`reusable-publish-plugin.yml` checks out `scripts/publish-plugin.sh` from this
-repo at its `tooling_ref` input, which defaults to `main`. A caller pinned to a
-release SHA still runs the publish script from `main`.
+Everything a reusable loads from this repo comes from the same commit as the
+reusable itself (`job.workflow_sha`), not from `main`:
+
+- `reusable-openwiki.yml` installs openwiki from `tools/openwiki/package-lock.json`
+  with `npm ci`.
+- `reusable-publish-plugin.yml` runs `scripts/` and installs Claude Code from
+  `tools/claude-code/package-lock.json` at that commit (`tooling_ref` overrides
+  it only for testing).
+- `reusable-security-scan.yml` installs zizmor with `pip --require-hashes` and
+  checks gitleaks against its release checksum.
+
+## Bumping a locked tool
+
+1. Change the version in `tools/<tool>/package.json`.
+2. In that folder, run `npm install --package-lock-only --before=<date 7+ days ago>`.
+   The date keeps a dependency published minutes earlier out of the lockfile.
+3. Commit both files in one PR, then cut a release once it merges.

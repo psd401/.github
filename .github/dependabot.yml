@@ -8,3 +8,17 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # Locked CLI installs used by the reusables. The tool versions themselves
+  # move by hand after a smoke test (RELEASING.md), so version updates for them
+  # are ignored; Dependabot security updates still patch the lockfiles.
+  - package-ecosystem: npm
+    directories:
+      - /tools/openwiki
+      - /tools/claude-code
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: openwiki
+      - dependency-name: "@anthropic-ai/claude-code"

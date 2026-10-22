@@ -1,0 +1,9 @@
+# Everything here runs in every PSD401 repo that calls it. A change to the
+# reusables, the scripts and tool lockfiles they load, or the starter templates
+# needs a review from tsd-engineering (ruleset "Require PR on main":
+# require_code_owner_review). psd-dev-standards standards/06 §4.
+/.github/workflows/   @PSD401/tsd-engineering
+/.github/CODEOWNERS   @PSD401/tsd-engineering
+/scripts/             @PSD401/tsd-engineering
+/tools/               @PSD401/tsd-engineering
+/workflow-templates/  @PSD401/tsd-engineering

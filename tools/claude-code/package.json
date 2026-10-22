@@ -1,0 +1,8 @@
+{
+  "name": "psd-tool-claude-code",
+  "private": true,
+  "description": "Locked install of the Claude Code CLI for reusable-publish-plugin.yml. Bump: change the version here, run `npm install --package-lock-only --before=<date 7+ days ago>`, commit both files.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.293"
+  }
+}
