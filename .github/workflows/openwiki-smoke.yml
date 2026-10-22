@@ -46,7 +46,10 @@ jobs:
     with:
       repository: ${{ inputs.repository || 'psd401/psd-standards-canary' }}
       base_branch: ${{ inputs.branch || 'main' }}
-      first_build_model_id: ${{ inputs.model }}
+      # Empty on pull_request runs; an empty value would override the
+      # reusable's Sonnet first-build default with Haiku, which leaves empty
+      # wikis (the from_scratch canary failed this way on PR #30, 2026-10-22).
+      first_build_model_id: ${{ inputs.model || 'us.anthropic.claude-sonnet-5-5' }}
       dry_run: true
       from_scratch: ${{ matrix.from_scratch }}
     secrets:
