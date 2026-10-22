@@ -21,9 +21,61 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Pinned uses — every ref at a full commit SHA
+        # psd-dev-standards standards/06 §4 Pinning (CIO decision 2026-10-21):
+        # tags and branches (@v7, @main) can be moved to new code. Local ./
+        # refs are exempt; docker:// images need an @sha256: digest. Same
+        # rules as psd-claude-plugins ci/check-workflow-pins.js.
+        run: |
+          shopt -s nullglob
+          files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          bad=0
+          for f in "${files[@]}"; do
+            n=0
+            while IFS= read -r line || [ -n "$line" ]; do
+              n=$((n + 1))
+              [[ "$line" =~ ^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[\"\']?([^\"\'#[:space:]]+) ]] || continue
+              ref="${BASH_REMATCH[2]}"
+              case "$ref" in
+                ./*) continue ;;
+                docker://*) [[ "$ref" =~ @sha256:[0-9a-f]{64}$ ]] && continue
+                  echo "::error file=$f,line=$n::$ref needs an @sha256: digest"; bad=$((bad + 1)); continue ;;
+              esac
+              pin="${ref##*@}"
+              if [[ "$ref" != *@* || ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error file=$f,line=$n::$ref needs a full 40-character commit SHA with a version comment (# vX.Y.Z)"
+                bad=$((bad + 1))
+              fi
+            done < "$f"
+          done
+          if [ "$bad" -gt 0 ]; then
+            echo "::error::$bad unpinned uses: ref(s). Pin each to a commit SHA; Dependabot (github-actions) keeps them current."
+            exit 1
+          fi
+          echo "${#files[@]} workflow file(s): every uses: ref is SHA-pinned"
       - name: zizmor — GitHub Actions workflow audit
         run: |
-          pipx install zizmor==1.6.0 2>/dev/null || pip install zizmor==1.6.0
+          # Hash-locked (psd-dev-standards standards/04 rule 7): every zizmor
+          # 1.6.0 file on PyPI, so pip refuses anything else. zizmor has no
+          # dependencies. Bump: replace the version and all hashes from
+          # https://pypi.org/pypi/zizmor/<version>/json.
+          cat > "$RUNNER_TEMP/zizmor-req.txt" <<'REQ'
+          zizmor==1.6.0 \
+            --hash=sha256:a50e3705adbfc76532b0beade03eea6959c23cb32d32f6e447df95606ed31776 \
+            --hash=sha256:b14cd65ec21ce4020f275a3cb392d5c25cefb92243bc211b8597fd6b2be0e17f \
+            --hash=sha256:aa22ddebe102c7c9b2e803387bebd07f0224ddb6e6e406b3e4f12fb08a86fa13 \
+            --hash=sha256:f80e07421bed95b85d785b3a60ddd80b52a80f6b99a60e7c756e96d786027d45 \
+            --hash=sha256:a748f38249286ac53662b0b688feb459fc4c72d7b896f9e3cee6310d9bb0d457 \
+            --hash=sha256:175d62ddf9e70b4ed5918c31cc9b440c4d30d5f96e656ccb6e0020cbadb45c7d \
+            --hash=sha256:261ae90831c3904c34114e2a08ac919d4f5fee3ad808fa033516864fa4c7b09b \
+            --hash=sha256:741b2cf964080c8b62d68f088f9f0aecac3e06b1ab542ec432d17a1ba0e46176 \
+            --hash=sha256:308b4efee543bfbc08494a0d941435657813757889161c56d67f7b86fb5b3a6d \
+            --hash=sha256:321da31fd51b768f81c7fad7417fe960c09c1cff950e101e1b0c251fa679e58f \
+            --hash=sha256:6ed19a6e10d8cb4377bafad4e1ef1ef1bbc87c7470c8379693ded4b1a9cc0ba3
+          REQ
+          python3 -m venv "$RUNNER_TEMP/zizmor-venv"
+          "$RUNNER_TEMP/zizmor-venv/bin/pip" install --quiet --no-deps --require-hashes -r "$RUNNER_TEMP/zizmor-req.txt"
+          export PATH="$RUNNER_TEMP/zizmor-venv/bin:$PATH"
           if [ -d .github/workflows ]; then
             zizmor --min-severity high .github/workflows/ || { echo "::error::zizmor found high-severity workflow issues"; exit 1; }
           else
@@ -34,8 +86,10 @@ jobs:
         if: ${{ !cancelled() && inputs.run_gitleaks }}
         env:
           GITLEAKS_VERSION: "8.24.0"
+          GITLEAKS_SHA256: "cb49b7de5ee986510fe8666ca0273a6cc15eb82571f2f14832c9e8920751f3a4" # gitleaks_8.24.0_checksums.txt
         run: |
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gl.tgz
+          echo "${GITLEAKS_SHA256}  gl.tgz" | sha256sum -c -
           tar -xzf gl.tgz gitleaks
           # Org rules: gitleaks' defaults plus student Google accounts (a
           # digit-only local part @edtools.psd401.net is the student number;

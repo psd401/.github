@@ -52,9 +52,9 @@ on:
         type: boolean
         default: false
       tooling_ref:
-        description: "Ref of PSD401/.github whose scripts/publish-plugin.sh runs. Override ONLY to test a change to it"
+        description: "Ref of PSD401/.github whose scripts/ and tools/ run. Empty = this reusable's own commit (job.workflow_sha). Override ONLY to test a change to them"
         type: string
-        default: "main"
+        default: ""
     secrets:
       # Optional so a repo without it skips cleanly (the gate step checks).
       PSD_AUTOMATION_APP_PRIVATE_KEY:
@@ -128,9 +128,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: PSD401/.github
-          ref: ${{ inputs.tooling_ref }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
           path: tooling
-          sparse-checkout: scripts
+          sparse-checkout: |
+            scripts
+            tools/claude-code
           persist-credentials: false
 
       - name: Check the calling repo requires pull requests
@@ -174,7 +176,10 @@ jobs:
       - name: Validate the marketplace
         if: steps.copy.outputs.changed == 'true'
         run: |
-          npm install --global @anthropic-ai/claude-code@2.1.293
+          # Locked install (tools/claude-code/package-lock.json), integrity-
+          # checked; the CLI ships as prebuilt optional packages, no scripts.
+          (cd tooling/tools/claude-code && npm ci --ignore-scripts --no-audit --no-fund)
+          export PATH="$PWD/tooling/tools/claude-code/node_modules/.bin:$PATH"
           cd marketplace && claude plugin validate .
 
       - name: Create the publish pull request

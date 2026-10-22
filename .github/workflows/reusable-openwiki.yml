@@ -19,7 +19,10 @@
 # Use a us.* inference profile for Claude: on-demand foundation-model IDs are
 # rejected and the global.* profile is denied by the org SCP.
 #
-# Version pin: openwiki_version below. A weekly job in this repo
+# Version pin: tools/openwiki/package.json + package-lock.json in this repo,
+# installed with `npm ci` from the commit this reusable runs at
+# (job.workflow_sha), so every transitive dependency is locked and
+# integrity-checked too. A weekly job in this repo
 # (openwiki-version-check.yml) opens an issue when npm has a newer release, and
 # openwiki-smoke.yml runs this workflow against psd-standards-canary on the
 # bump PR before anyone merges it.
@@ -52,13 +55,13 @@ on:
         # built both test repos on the first try. Updates stay on model_id.
         default: "us.anthropic.claude-sonnet-5-5"
       openwiki_version:
-        description: "Override the org pin ONLY for testing a new release"
+        description: "Deprecated. The version is locked in tools/openwiki/; a non-empty value must equal it or the run fails"
         type: string
         # 0.7.1 + Claude Haiku 5.5 fails on repos that already have a wiki:
         # "Repository planning worker exited without submit_plan" (all four
-        # repos that ran on 2026-10-08). 0.3.3 + Haiku 5.5 passes. Stay here
+        # repos that ran on 2026-10-08). 0.3.3 + Haiku 5.5 passes. Stay there
         # until a newer release passes both smoke-test cases.
-        default: "0.3.3"
+        default: ""
       auto_merge:
         description: "Merge the docs PR immediately without human review (docs-only, add-paths capped — the safe-to-automate class per standards/09)"
         type: boolean
@@ -175,13 +178,40 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install OpenWiki (org-pinned)
+      # The lockfile comes from this reusable's own commit, not the caller's
+      # repo and not main, so a caller pinned to a release gets that release's
+      # dependency tree.
+      - name: Check out the OpenWiki lockfile
         if: steps.gate.outputs.configured == 'true'
-        # No --ignore-scripts: better-sqlite3 needs its native build. Risk is
-        # bounded by job-scoped token, human-reviewed PR, and add-paths cap.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .psd-tools
+          sparse-checkout: tools/openwiki
+          persist-credentials: false
+
+      - name: Install OpenWiki (locked)
+        id: install
+        if: steps.gate.outputs.configured == 'true'
+        # npm ci installs exactly the lockfile, integrity-checked. Install
+        # scripts are off except better-sqlite3's native build, the one
+        # package in the tree that has one (checked on 0.3.3, 2026-10-21).
         env:
           OW_VERSION: ${{ inputs.openwiki_version }}
-        run: npm install --global "openwiki@${OW_VERSION}"
+        run: |
+          tool="$RUNNER_TEMP/openwiki-tool"
+          mkdir -p "$tool"
+          cp .psd-tools/tools/openwiki/package.json .psd-tools/tools/openwiki/package-lock.json "$tool/"
+          rm -rf .psd-tools
+          locked=$(jq -r '.packages["node_modules/openwiki"].version' "$tool/package-lock.json")
+          if [ -n "$OW_VERSION" ] && [ "$OW_VERSION" != "$locked" ]; then
+            echo "::error::openwiki_version '$OW_VERSION' differs from the locked $locked; change tools/openwiki/ in PSD401/.github instead"
+            exit 1
+          fi
+          (cd "$tool" && npm ci --ignore-scripts --no-audit --no-fund && npm rebuild better-sqlite3)
+          echo "$tool/node_modules/.bin" >> "$GITHUB_PATH"
+          echo "version=$locked" >> "$GITHUB_OUTPUT"
 
       - name: Remove existing wiki (from-scratch smoke test)
         if: steps.gate.outputs.configured == 'true' && inputs.dry_run && inputs.from_scratch
@@ -258,7 +288,7 @@ jobs:
           title: "docs: update OpenWiki"
           body: |
             Automated OpenWiki documentation update via the org reusable
-            workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ inputs.openwiki_version }}, model ${{ steps.run.outputs.model }}).
+            workflow (PSD401/.github → reusable-openwiki.yml, openwiki@${{ steps.install.outputs.version }}, model ${{ steps.run.outputs.model }}).
             Scoped to `openwiki/` only.
 
       # Docs flow all the way through: the PR satisfies PR-required rulesets,

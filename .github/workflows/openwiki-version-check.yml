@@ -1,7 +1,8 @@
-# Weekly: if npm has a newer openwiki than the org pin in reusable-openwiki.yml,
+# Weekly: if npm has a newer openwiki than the org pin in tools/openwiki/,
 # open (or update) one issue in this repo asking for a bump. The bump PR runs
 # openwiki-smoke.yml against psd-standards-canary; merge it once that passes.
-# Merging updates every repo, since callers use the reusable at @main.
+# After merging, cut a release (RELEASING.md); callers pick it up through
+# their Dependabot bump PRs, since every caller pins a release SHA.
 #
 # Why an issue and not a bot PR: editing a file under .github/workflows needs
 # the GitHub App "workflows" permission, and psd-automation doesn't have it.
@@ -34,8 +35,7 @@ jobs:
       - name: Compare pin with npm latest
         id: versions
         run: |
-          file=.github/workflows/reusable-openwiki.yml
-          current=$(awk '/openwiki_version:/{f=1} f && /default:/{gsub(/[" ]/,"",$2); print $2; exit}' "$file")
+          current=$(jq -r '.dependencies.openwiki' tools/openwiki/package.json)
           latest=$(curl -fsS https://registry.npmjs.org/openwiki | jq -r '."dist-tags".latest')
           [ -n "$current" ] && [ -n "$latest" ] || { echo "::error::could not read versions (current='$current' latest='$latest')"; exit 1; }
           echo "current=$current" >> "$GITHUB_OUTPUT"
@@ -53,12 +53,12 @@ jobs:
             --description "A newer openwiki release is available" 2>/dev/null || true
           title="OpenWiki $LATEST is available (org pin $CURRENT)"
           body=$(cat <<BODY
-          npm has openwiki **$LATEST**; the org pin in \`.github/workflows/reusable-openwiki.yml\` is **$CURRENT**.
+          npm has openwiki **$LATEST**; the org pin in \`tools/openwiki/package.json\` is **$CURRENT**.
 
           To bump:
-          1. Open a PR changing \`openwiki_version\`'s \`default\` to \`"$LATEST"\`.
+          1. Open a PR setting \`openwiki\` to \`$LATEST\` in \`tools/openwiki/package.json\`, then run \`npm install --package-lock-only --before=<date 7+ days ago>\` there and commit the lockfile.
           2. Wait for **OpenWiki smoke test** (psd-standards-canary) to pass.
-          3. Merge. Every repo picks it up on its next OpenWiki run.
+          3. Merge, then cut a release (RELEASING.md). Repos pick it up through their Dependabot bump PR.
 
           Release history: https://www.npmjs.com/package/openwiki?activeTab=versions
           BODY
