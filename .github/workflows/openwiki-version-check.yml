@@ -1,7 +1,8 @@
 # Weekly: if npm has a newer openwiki than the org pin in reusable-openwiki.yml,
 # open (or update) one issue in this repo asking for a bump. The bump PR runs
 # openwiki-smoke.yml against psd-standards-canary; merge it once that passes.
-# Merging updates every repo, since callers use the reusable at @main.
+# After merging, cut a release (RELEASING.md); callers pick it up through
+# their Dependabot bump PRs, since every caller pins a release SHA.
 #
 # Why an issue and not a bot PR: editing a file under .github/workflows needs
 # the GitHub App "workflows" permission, and psd-automation doesn't have it.

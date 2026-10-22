@@ -1,0 +1,80 @@
+# Cut a semver release (vX.Y.Z tag + GitHub release) of the reusable workflow
+# library. Callers pin `uses: PSD401/.github/.github/workflows/reusable-*.yml@<sha> # vX.Y.Z`
+# and their Dependabot (github-actions ecosystem) opens a bump PR when a newer
+# tag exists. Without tags, Dependabot moves a SHA pin to the latest commit on
+# the default branch instead of the latest release.
+#
+# Versioning: MAJOR = a caller must change (new required input/secret, removed
+# input, renamed check/job, permissions the caller must grant); MINOR = new
+# optional input or new reusable; PATCH = fixes and pin bumps inside reusables.
+# After a release, bump the pins in workflow-templates/ in a PR (RELEASING.md).
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version, e.g. v1.2.0 (must be higher than the latest release)"
+        type: string
+        required: true
+      ref:
+        description: "Commit to release; must already be on main. Default: main's head"
+        type: string
+        default: "main"
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create the tag and the release
+    steps:
+      - name: Validate and create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::run this from main (got $GITHUB_REF)"; exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::version must look like v1.2.3 (got '$VERSION')"; exit 1
+          fi
+          if gh api "repos/$REPO/git/ref/tags/$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag $VERSION already exists"; exit 1
+          fi
+
+          # Resolve the ref to a full SHA and require it to be on main.
+          sha=$(gh api "repos/$REPO/commits/$REF" --jq .sha)
+          status=$(gh api "repos/$REPO/compare/$sha...main" --jq .status)
+          case "$status" in
+            identical|ahead) ;;
+            *) echo "::error::$sha is not on main (compare status: $status)"; exit 1 ;;
+          esac
+
+          # Must be strictly higher than every existing vX.Y.Z tag.
+          latest=$(gh api "repos/$REPO/tags" --paginate --jq '.[].name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          if [ -n "$latest" ]; then
+            top=$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n1)
+            if [ "$top" != "$VERSION" ] || [ "$latest" = "$VERSION" ]; then
+              echo "::error::$VERSION is not higher than the latest release $latest"; exit 1
+            fi
+          fi
+
+          gh release create "$VERSION" --repo "$REPO" --target "$sha" \
+            --title "$VERSION" --generate-notes ${latest:+--notes-start-tag "$latest"}
+          {
+            echo "Released **$VERSION** at \`$sha\` (previous: ${latest:-none})."
+            echo
+            echo "Caller pin: \`@$sha # $VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"

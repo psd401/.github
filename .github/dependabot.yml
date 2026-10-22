@@ -1,0 +1,10 @@
+# Keeps the SHA pins inside this repo's own workflows current. Callers in other
+# repos run their own Dependabot github-actions entry against our vX.Y.Z tags.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
