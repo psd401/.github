@@ -1,7 +1,8 @@
-# Everything here runs in every PSD401 repo that calls it. A change to the
+# Everything here runs in every PSD401 repo that calls it, so a change to the
 # reusables, the scripts and tool lockfiles they load, or the starter templates
-# needs a review from a tsd-engineering member (ruleset "Require PR on main":
-# require_code_owner_review). psd-dev-standards standards/06 §4.
+# requests a review from the tsd-engineering members. Routing only: no ruleset
+# requires an approval or a code-owner review (psd-dev-standards standards/03,
+# CIO decision 2026-10-22).
 # Individual handles because the tsd-engineering team is secret, and
 # CODEOWNERS only accepts visible teams. Keep this list equal to the team.
 /.github/workflows/   @krishagel @songstadw @pratzm @07-C9 @reeseherber @farmerjPSD
