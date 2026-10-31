@@ -213,9 +213,12 @@ jobs:
           echo "$tool/node_modules/.bin" >> "$GITHUB_PATH"
           echo "version=$locked" >> "$GITHUB_OUTPUT"
 
+      # openwiki/INSTRUCTIONS.md is the owner's brief (standards/06), not
+      # generated output, so every from-scratch wipe keeps it.
       - name: Remove existing wiki (from-scratch smoke test)
         if: steps.gate.outputs.configured == 'true' && inputs.dry_run && inputs.from_scratch
-        run: rm -rf openwiki
+        run: |
+          if [ -d openwiki ]; then find openwiki -mindepth 1 -maxdepth 1 ! -name INSTRUCTIONS.md -exec rm -rf {} +; fi
 
       # Haiku 5.5 on openwiki 0.3.3 sometimes stops before writing any page
       # yet records status "complete": 11 of 14 first builds in CI on
@@ -251,10 +254,10 @@ jobs:
           echo "model=$model" >> "$GITHUB_OUTPUT"
           echo "first_build=$first_build" >> "$GITHUB_OUTPUT"
           openwiki code --update --print
-          pages=$(find openwiki -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+          pages=$(find openwiki -name '*.md' ! -path openwiki/INSTRUCTIONS.md 2>/dev/null | wc -l | tr -d ' ')
           if [ "$first_build" = true ] && [ "$pages" -le 2 ]; then
             echo "::warning::First build produced $pages page(s) with $model; retrying once from scratch."
-            rm -rf openwiki
+            if [ -d openwiki ]; then find openwiki -mindepth 1 -maxdepth 1 ! -name INSTRUCTIONS.md -exec rm -rf {} +; fi
             openwiki code --update --print
           fi
 
@@ -269,7 +272,7 @@ jobs:
           jq . "$meta"
           status=$(jq -r .status "$meta")
           [ "$status" = complete ] || { echo "::error::OpenWiki status is '$status', expected 'complete'"; exit 1; }
-          pages=$(find openwiki -name '*.md' | wc -l | tr -d ' ')
+          pages=$(find openwiki -name '*.md' ! -path openwiki/INSTRUCTIONS.md | wc -l | tr -d ' ')
           echo "OpenWiki: $pages pages (first build: $FIRST_BUILD), model $(jq -r .model "$meta"), gitHead $(jq -r .gitHead "$meta")" >> "$GITHUB_STEP_SUMMARY"
           # status says "complete" even when no page was written; an index
           # alone is not a wiki.
