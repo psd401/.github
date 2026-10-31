@@ -196,7 +196,7 @@ jobs:
         if: steps.gate.outputs.configured == 'true'
         # npm ci installs exactly the lockfile, integrity-checked. Install
         # scripts are off except better-sqlite3's native build, the one
-        # package in the tree that has one (checked on 0.3.3, 2026-10-21).
+        # package in the tree that has one (checked on 0.7.2, 2026-10-31).
         env:
           OW_VERSION: ${{ inputs.openwiki_version }}
         run: |
