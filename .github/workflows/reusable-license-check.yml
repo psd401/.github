@@ -10,6 +10,12 @@ on:
 jobs:
   run:
     name: license-check
+    # A newer push to the same PR cancels this run, which could only report
+    # on a superseded commit. Other events group by run id, so pushes to the
+    # default branch and scheduled scans never cancel or queue each other.
+    concurrency:
+      group: license-check-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
