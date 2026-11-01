@@ -12,7 +12,7 @@ jobs:
   publish:
     permissions:
       contents: read # the reusable only reads with GITHUB_TOKEN; writes use the psd-automation App
-    uses: PSD401/.github/.github/workflows/reusable-publish-plugin.yml@8c4dbb4e6ae79345ec5f56a96de522e9528e3fb4 # v1.1.0
+    uses: PSD401/.github/.github/workflows/reusable-publish-plugin.yml@75e88ddab0a838d9f04ea810e0f8bb4402eb3847 # v1.1.1
     with:
       plugin_path: plugin
       category: productivity
