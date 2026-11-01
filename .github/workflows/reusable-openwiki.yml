@@ -70,6 +70,10 @@ on:
         description: "Repo to document (default: the caller). The smoke test uses psd401/psd-standards-canary"
         type: string
         default: ""
+      run_on_push:
+        description: "Rebuild on pushes to the default branch. Off by default: the caller's weekly schedule rebuilds the wiki, and a push run costs Actions minutes for every merge"
+        type: boolean
+        default: false
       dry_run:
         description: "Generate and verify the wiki, but open no PR (smoke test)"
         type: boolean
@@ -103,6 +107,10 @@ permissions:
 jobs:
   run:
     name: openwiki-update
+    # Skipped jobs start no runner and use no minutes. Callers still trigger on
+    # push (the org template does), so this turns every push into a skip until
+    # a repo opts in with run_on_push. Schedule and manual runs are unchanged.
+    if: github.event_name != 'push' || inputs.run_on_push
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

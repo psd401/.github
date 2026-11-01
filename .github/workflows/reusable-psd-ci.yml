@@ -48,6 +48,12 @@ on:
 jobs:
   run:
     name: psd-ci
+    # A newer push to the same PR cancels this run, which could only report
+    # on a superseded commit. Other events group by run id, so pushes to the
+    # default branch and scheduled scans never cancel or queue each other.
+    concurrency:
+      group: psd-ci-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -192,6 +198,12 @@ jobs:
   # CLI per standards/04 (never a convenience action).
   secret-scan:
     name: secret-scan
+    # A newer push to the same PR cancels this run, which could only report
+    # on a superseded commit. Other events group by run id, so pushes to the
+    # default branch and scheduled scans never cancel or queue each other.
+    concurrency:
+      group: secret-scan-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     if: inputs.secret-scan-mode != 'off'
     runs-on: ubuntu-latest
     timeout-minutes: 10
