@@ -50,9 +50,12 @@ on:
 jobs:
   run:
     name: claude-review
-    # Dependabot runs read from the Dependabot secrets store which lacks our
-    # keys; a skipped check does not fail the PR.
-    if: github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false
+    # No actor test here: a skipped job satisfies the required check, so a
+    # skip must never stand in for a review. The caller routes Dependabot's own
+    # PRs to reusable-claude-review-skip.yml; anything else that can't be
+    # reviewed fails in the first step. Drafts can't merge, so skipping them
+    # is safe.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -64,6 +67,20 @@ jobs:
       issues: read
       id-token: write
     steps:
+      # Dependabot-triggered and fork runs get no BEDROCK_API_KEY, so they
+      # can't be reviewed. Before this check the job skipped on
+      # `github.actor == 'dependabot[bot]'`, and actor is the last pusher: a
+      # fork PR that Dependabot later pushed to skipped and read as passed.
+      - name: Refuse runs that can't be reviewed
+        env:
+          ACTOR: ${{ github.actor }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$ACTOR" = "dependabot[bot]" ] || [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Can't review this run (actor $ACTOR, head repo $HEAD_REPO): no Bedrock key for Dependabot-triggered or fork runs. A human must review it; merge with an admin bypass."
+            exit 1
+          fi
+
       # Generated wiki PRs (openwiki/ only) aren't reviewed: they're capped to
       # docs, and a 38-file wiki rebuild ran the reviewer out of turns
       # (psd-device-repair-manager#13, 2026-10-08). Decision: Kris, 2026-10-08.
