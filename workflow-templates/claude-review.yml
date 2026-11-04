@@ -10,8 +10,11 @@ jobs:
       issues: read
       id-token: write # caller must grant; org default token is read-only and reusables cannot elevate
     # Dependabot-triggered callers cannot grant id-token: write to the
-    # reusable — startup_failure. The reusable also self-guards; both needed.
-    if: github.actor != 'dependabot[bot]'
+    # reusable — startup_failure. Only a PR Dependabot opened, pushed last, in
+    # this repo goes to the no-op below; testing actor alone let a fork PR
+    # that Dependabot pushed to pass unreviewed. Anything else fails in the
+    # reusable rather than skipping.
+    if: ${{ !(github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
     uses: PSD401/.github/.github/workflows/reusable-claude-review.yml@85ef062e6ec4492a075c731211c9fe405fa4c6cc # v1.2.0
     secrets:
       BEDROCK_API_KEY: ${{ secrets.BEDROCK_API_KEY }}
@@ -22,5 +25,5 @@ jobs:
   claude-review-dependabot:
     name: claude-review
     permissions: {}
-    if: github.actor == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
     uses: PSD401/.github/.github/workflows/reusable-claude-review-skip.yml@85ef062e6ec4492a075c731211c9fe405fa4c6cc # v1.2.0
