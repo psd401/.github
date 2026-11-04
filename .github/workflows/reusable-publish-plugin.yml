@@ -175,12 +175,7 @@ jobs:
       # The marketplace's own release rule: `claude plugin validate .` passes.
       - name: Validate the marketplace
         if: steps.copy.outputs.changed == 'true'
-        run: |
-          # Locked install (tools/claude-code/package-lock.json), integrity-
-          # checked; the CLI ships as prebuilt optional packages, no scripts.
-          (cd tooling/tools/claude-code && npm ci --ignore-scripts --no-audit --no-fund)
-          export PATH="$PWD/tooling/tools/claude-code/node_modules/.bin:$PATH"
-          cd marketplace && claude plugin validate .
+        run: bash tooling/scripts/validate-marketplace.sh tooling/tools/claude-code marketplace
 
       - name: Create the publish pull request
         if: steps.copy.outputs.changed == 'true' && !inputs.dry_run

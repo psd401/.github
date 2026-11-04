@@ -9,6 +9,9 @@ on:
       - scripts/publish-plugin.test.sh
       - scripts/requires-pull-requests.sh
       - scripts/requires-pull-requests.test.sh
+      - scripts/validate-marketplace.sh
+      - scripts/validate-marketplace.test.sh
+      - tools/claude-code/**
       - .github/workflows/reusable-publish-plugin.yml
       - .github/workflows/publish-plugin-test.yml
 
@@ -25,3 +28,7 @@ jobs:
           persist-credentials: false
       - run: bash scripts/publish-plugin.test.sh
       - run: bash scripts/requires-pull-requests.test.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - run: bash scripts/validate-marketplace.test.sh
