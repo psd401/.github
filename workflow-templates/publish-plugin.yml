@@ -1,13 +1,15 @@
-# ABOUTME: Publishes this repo's Claude Code plugin to the PSD plugin marketplace when its folder changes on the default branch.
-# ABOUTME: Bump "version" in the plugin's plugin.json with every change; the publish refuses a change without one.
+# ABOUTME: Publishes this repo's Claude Code plugin to the PSD plugin marketplace when its plugin.json changes on the default branch.
+# ABOUTME: A release is a PR that bumps "version" in plugin.json; plugin changes merged before it ship with it.
 name: Publish plugin
 on:
   workflow_dispatch:
   push:
     branches: [$default-branch]
-    # The folder holding .claude-plugin/plugin.json; also set plugin_path below.
+    # The plugin's plugin.json, so plugin changes can merge and wait for a release PR
+    # that bumps its version; the publish refuses a plugin.json change without a bump.
+    # Set plugin_path below to the folder holding .claude-plugin/.
     paths:
-      - "plugin/**"
+      - "plugin/.claude-plugin/plugin.json"
 jobs:
   publish:
     permissions:
