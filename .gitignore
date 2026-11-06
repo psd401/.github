@@ -1,0 +1,4 @@
+# ABOUTME: Keeps local Python test artifacts out of the repo.
+# ABOUTME: CI runs pytest with -p no:cacheprovider; local runs still write bytecode.
+__pycache__/
+.pytest_cache/

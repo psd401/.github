@@ -1,0 +1,36 @@
+# ABOUTME: Runs the scripts/iac/ pytest suite on PRs that change the IaC reusables or the files they load.
+# ABOUTME: Callers pin reusable-env-file-check.yml to a release SHA, so changes must pass here before a release.
+name: IaC reusable tests
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/reusable-env-file-check.yml
+      - .github/workflows/iac-tests.yml
+      - schemas/iac/**
+      - scripts/iac/**
+      - tools/iac/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test deps (hash-locked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/iac-test-venv"
+          "$RUNNER_TEMP/iac-test-venv/bin/pip" install --quiet --require-hashes -r tools/iac/requirements-test.txt
+      - run: '"$RUNNER_TEMP/iac-test-venv/bin/python" -m pytest -p no:cacheprovider scripts/iac -v'

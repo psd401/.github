@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PSD401/.github/main/schemas/iac/environment-file.schema.json",
+  "title": "PSD district environment file",
+  "description": "Schema for the private <district-id>.env.yml referenced by psd-dev-standards standards/08-iac.md 'Private environment file'. The real file never lives in a public repo; schemas/iac/example.env.yml is a placeholder instance. Resolved via PSD_ENV_FILE and validated by .github/workflows/reusable-env-file-check.yml in PSD401/.github before any Terraform/Packer job reads it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "district_id",
+    "network",
+    "timezone",
+    "patch_window",
+    "monitoring",
+    "virtualization",
+    "cloud",
+    "oidc",
+    "operations",
+    "contacts"
+  ],
+  "properties": {
+    "district_id": {
+      "type": "string",
+      "description": "Short district code used as a prefix in resource names (e.g. state-bucket and deploy-role names). Real values are lowercase alphanumeric with hyphens; example.env.yml uses the <token> placeholder instead (08-iac.md 'Private environment file').",
+      "examples": ["<district-id>"]
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vlans", "dns_zones", "ca", "syslog_target", "ntp_servers"],
+      "description": "On-prem network facts consumed by the Proxmox and on-prem templates.",
+      "properties": {
+        "vlans": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["management", "workload", "storage"],
+          "description": "One VLAN entry per network tier. Each entry's id is the numeric VLAN ID; subnet is its CIDR block.",
+          "properties": {
+            "management": { "$ref": "#/$defs/vlan" },
+            "workload": { "$ref": "#/$defs/vlan" },
+            "storage": { "$ref": "#/$defs/vlan" }
+          }
+        },
+        "dns_zones": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["internal"],
+          "properties": {
+            "internal": {
+              "type": "string",
+              "description": "Internal DNS zone name.",
+              "examples": ["<internal-zone-name>"]
+            }
+          }
+        },
+        "ca": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["internal_root"],
+          "properties": {
+            "internal_root": {
+              "type": "string",
+              "description": "Name or path of the internal root CA used to trust on-prem TLS endpoints.",
+              "examples": ["<ca-name-or-path>"]
+            }
+          }
+        },
+        "syslog_target": {
+          "type": "string",
+          "description": "Central syslog endpoint, as host:port or a URL.",
+          "examples": ["<syslog-host-or-endpoint>"]
+        },
+        "ntp_servers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "NTP server list. Placeholder until the ops process defines a standard set (08-iac.md 'Private environment file').",
+          "examples": [["<ntp-server-1>", "<ntp-server-2>"]]
+        }
+      }
+    },
+    "timezone": {
+      "type": "string",
+      "description": "IANA timezone name. Placeholder until the ops process defines it.",
+      "examples": ["<iana-tz-name>"]
+    },
+    "patch_window": {
+      "type": "string",
+      "description": "Free-text patch/maintenance window. Placeholder until the ops process defines it.",
+      "examples": ["<patch-window>"]
+    },
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["zabbix_server"],
+      "properties": {
+        "zabbix_server": {
+          "type": "string",
+          "description": "Zabbix server endpoint URL.",
+          "examples": ["<zabbix-endpoint>"]
+        }
+      }
+    },
+    "virtualization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proxmox_api_endpoint", "cluster_name", "resource_pools", "vmid_ranges"],
+      "properties": {
+        "proxmox_api_endpoint": {
+          "type": "string",
+          "description": "Proxmox API endpoint URL.",
+          "examples": ["<proxmox-api-url>"]
+        },
+        "cluster_name": {
+          "type": "string",
+          "description": "Proxmox cluster name.",
+          "examples": ["<cluster-name>"]
+        },
+        "resource_pools": {
+          "type": "object",
+          "description": "Map of repo name to its Proxmox resource pool name. One entry per repo that provisions on-prem VMs.",
+          "additionalProperties": { "type": "string" },
+          "examples": [{ "<repo-name>": "<pool-name>" }]
+        },
+        "vmid_ranges": {
+          "type": "object",
+          "description": "Map of purpose to its reserved VMID range, e.g. \"templates: 9000-9099\" (15-onprem-platform.md rule 14). Each value is a strict \"<start>-<end>\" pair so the conftest VMID-range check can parse it; record any reuse caveat in vmid_reuse_notes instead, never appended here.",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(<.*>|[0-9]+-[0-9]+)$"
+          },
+          "examples": [{ "templates": "9000-9099" }]
+        },
+        "vmid_reuse_notes": {
+          "type": "string",
+          "description": "Optional free-text record of VMID reassignment after deletion (15-onprem-platform.md rule 17), e.g. which purpose's range has had IDs reused and why. Not parsed by any conftest check; keep range math out of vmid_ranges values.",
+          "examples": ["<vmid-reuse-notes>"]
+        },
+        "bridge_availability": {
+          "type": "object",
+          "description": "Per-node bridge/VLAN uplink registry (15-onprem-platform.md §4 rule 16): maps each Proxmox node name to the bridge or VLAN names uplinked on it. A VM needing a bridge absent from a node's list must be pinned to a node where that bridge is present, and a comment recorded next to the resource. Optional until a conftest rule reads it (named gap, 15-onprem-platform.md §4 rule 16, §13).",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          },
+          "examples": [{ "<node-name>": ["<bridge-name-1>", "<bridge-name-2>"] }]
+        }
+      }
+    },
+    "cloud": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aws", "gcp"],
+      "properties": {
+        "aws": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state_bucket_prefix", "account_alias", "region_default", "region_ai", "alerts_topic_name", "bedrock_default_model_id"],
+          "properties": {
+            "state_bucket_prefix": {
+              "type": "string",
+              "description": "Root of the Terraform state-bucket naming pattern, e.g. \"psd-tfstate\" (full name is <prefix>-<account-alias>-<region>, 08-iac.md 'Platform: AWS (Terraform)').",
+              "examples": ["<state-bucket-prefix>"]
+            },
+            "account_alias": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["prod", "nonprod", "sandbox"],
+              "description": "Account alias per environment tier, used in resource-naming patterns.",
+              "properties": {
+                "prod": { "type": "string", "examples": ["<prod-account-alias>"] },
+                "nonprod": { "type": "string", "examples": ["<nonprod-account-alias>"] },
+                "sandbox": { "type": "string", "examples": ["<sandbox-account-alias>"] }
+              }
+            },
+            "region_default": {
+              "type": "string",
+              "description": "Default AWS region for this district's workloads.",
+              "examples": ["<aws-region-default>"]
+            },
+            "region_ai": {
+              "type": "string",
+              "description": "AWS region used for Bedrock-heavy workloads (13-aws-accounts.md rule 6 allows us-east-1 for this).",
+              "examples": ["<aws-region-ai>"]
+            },
+            "alerts_topic_name": {
+              "type": "string",
+              "description": "Name of the SNS topic every CloudWatch alarm action targets, present in each workload account (08-iac.md, district defaults). Apps look it up by name and never create their own.",
+              "examples": ["<alerts-topic-name>"]
+            },
+            "bedrock_default_model_id": {
+              "type": "string",
+              "description": "Bedrock model ID an app uses when the task names none (08-iac.md, district defaults). Apps take it as a variable with no default.",
+              "examples": ["<bedrock-default-model-id>"]
+            }
+          }
+        },
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state_backend", "project_id"],
+          "properties": {
+            "state_backend": {
+              "type": "string",
+              "enum": ["gcs", "s3"],
+              "description": "Terraform state backend for GCP. GCS is the standard; \"s3\" exists only for a district that deliberately centralizes state in AWS.",
+              "examples": ["gcs"]
+            },
+            "project_id": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["prod", "nonprod"],
+              "properties": {
+                "prod": { "type": "string", "examples": ["<gcp-project-id-prod>"] },
+                "nonprod": { "type": "string", "examples": ["<gcp-project-id-nonprod>"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "oidc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deploy_role_prefix"],
+      "properties": {
+        "deploy_role_prefix": {
+          "type": "string",
+          "description": "Root of the OIDC deploy-role naming pattern, e.g. \"psd-deploy\" (full name is <prefix>-<repo>-<env>, 08-iac.md 'Deploy roles and OIDC').",
+          "examples": ["<deploy-role-prefix>"]
+        }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["change_request_system"],
+      "properties": {
+        "change_request_system": {
+          "type": "string",
+          "description": "Placeholder until the ops process defines how change requests are tracked.",
+          "examples": ["<change-request-system>"]
+        },
+        "pbs_backup_schedule": {
+          "type": "string",
+          "description": "Proxmox Backup Server job schedule for the hypervisor-level image backup, in PBS's own schedule syntax (a calendar event string such as \"daily\", or a cron expression). This is the disaster-recovery floor layer; an app's own backup runbook covers application-level restore separately (15-onprem-platform.md §10 rule 39).",
+          "examples": ["<pbs-backup-schedule>"]
+        }
+      }
+    },
+    "contacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iac_owner_role"],
+      "properties": {
+        "iac_owner_role": {
+          "type": "string",
+          "description": "Role title only, never a person's name. Schema validation checks type, not whether the value is actually a role (08-iac.md 'Private environment file', a named gap).",
+          "examples": ["<iac-owner-role-title>"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "vlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "subnet", "allowed_data_classifications"],
+      "properties": {
+        "id": {
+          "description": "Numeric VLAN ID (1-4094). example.env.yml uses the <token> placeholder instead of a real integer (08-iac.md 'Private environment file'), so this accepts either.",
+          "anyOf": [
+            { "type": "integer", "minimum": 1, "maximum": 4094 },
+            { "type": "string", "pattern": "^<.*>$" }
+          ],
+          "examples": ["<management-vlan-id>"]
+        },
+        "subnet": {
+          "type": "string",
+          "description": "CIDR block for this VLAN, e.g. \"10.0.0.0/24\".",
+          "examples": ["<management-subnet-cidr>"]
+        },
+        "allowed_data_classifications": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["public", "internal", "student-pii"]
+          },
+          "description": "Data classifications permitted to run on this VLAN, using the same enum as the psd:data-classification tag (08-iac.md District defaults). Maps the VLAN's infrastructure role to the data sensitivity it's approved to carry (15-onprem-platform.md §4 rule 16). Until cluster.fw is enabled (§5 rules 19-21), this is a declared policy, not an enforced control.",
+          "examples": [["internal"]]
+        }
+      }
+    }
+  }
+}
