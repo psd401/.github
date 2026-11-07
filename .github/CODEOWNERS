@@ -7,6 +7,7 @@
 # CODEOWNERS only accepts visible teams. Keep this list equal to the team.
 /.github/workflows/   @krishagel @songstadw @pratzm @07-C9 @reeseherber @farmerjPSD
 /.github/CODEOWNERS   @krishagel @songstadw @pratzm @07-C9 @reeseherber @farmerjPSD
+/.github/actionlint.yaml @krishagel @songstadw @pratzm @07-C9 @reeseherber @farmerjPSD
 /policy/              @krishagel @songstadw @pratzm @07-C9 @reeseherber @farmerjPSD
 /schemas/             @krishagel @songstadw @pratzm @07-C9 @reeseherber @farmerjPSD
 /scripts/             @krishagel @songstadw @pratzm @07-C9 @reeseherber @farmerjPSD

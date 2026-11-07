@@ -8,6 +8,7 @@ on:
       # Every workflow and starter template: the action-pins job scans them all.
       - .github/workflows/**
       - workflow-templates/**
+      - .github/actionlint.yaml
       - policy/**
       - schemas/iac/**
       - scripts/iac/**

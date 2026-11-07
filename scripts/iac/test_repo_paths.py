@@ -1,5 +1,5 @@
 # ABOUTME: Every repo-relative file path named in the IaC policy, schemas, scripts, tools, docs and
-# ABOUTME: reusables must exist here, so nothing still points at the standards repo's old layout.
+# ABOUTME: reusables must exist here; CODEOWNERS and iac-tests.yml cover .github/actionlint.yaml.
 import pathlib
 import re
 
@@ -26,3 +26,18 @@ def referenced(p):
 def test_named_paths_exist(src):
     missing = [r for r in referenced(src) if not (ROOT / r).exists()]
     assert not missing, f"{src.relative_to(ROOT)} names {missing}"
+
+
+def owners(path):
+    for line in (ROOT / ".github/CODEOWNERS").read_text().splitlines():
+        parts = line.split()
+        if parts and parts[0] == path:
+            return parts[1:]
+    return None
+
+
+def test_actionlint_config_has_the_workflow_owners_and_triggers_iac_tests():
+    import yaml
+    assert owners("/.github/actionlint.yaml") == owners("/.github/workflows/")
+    wf = yaml.safe_load((ROOT / ".github/workflows/iac-tests.yml").read_text())
+    assert ".github/actionlint.yaml" in wf.get("on", wf.get(True))["pull_request"]["paths"]

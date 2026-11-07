@@ -43,7 +43,7 @@ jobs:
 
 - Inputs: `working_directory` (required), `environment`, `platform` (`aws`/`gcp`), `tier`, `aws_region`, `plan_role_arn`, `apply_role_arn`, `apply`, `plan_recipient`, `account_alias`, `tooling_ref`. Secrets: `PSD_ENV_FILE_CONTENTS` (required), `INFRACOST_API_KEY`, `PSD_PLAN_KEY`.
 - `policy/`, `scripts/iac/`, `schemas/iac/` and `tools/iac/` load from the pinned commit. `tooling_ref` overrides that ref; leave it empty except to test a change to those paths.
-- Python helpers install from `tools/iac/requirements.txt` with `pip --require-hashes`; age and conftest install through `scripts/iac/install_*.sh`, which check a pinned SHA-256.
+- Python helpers install from `tools/iac/requirements.txt` with `pip --require-hashes` (yamllint, in the on-prem reusable, from `tools/iac/requirements-yamllint.txt`); age and conftest install through `scripts/iac/install_*.sh`, which check a pinned SHA-256.
 
 ## IaC: `reusable-onprem-checks.yml`
 
