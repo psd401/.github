@@ -1,5 +1,5 @@
-# ABOUTME: Hostname deny list for redact-check.sh. Ships comment-only; callers add
-# ABOUTME: their own internal domain patterns in their own repo.
+# ABOUTME: Hostname deny list for redact-check.sh. Ships comment-only, and the reusables
+# ABOUTME: read this copy, so CI runs no hostname check; set REDACT_HOSTNAME_FILE to use one locally.
 # policy/redaction/hostname-patterns.txt — redact-check.sh hostname deny list
 # (standards/08-iac.md 'Redaction check')
 #
@@ -7,6 +7,9 @@
 # Each fragment should identify a real internal domain or naming pattern for
 # this district (e.g. "\.internal\.example-district\.k12\.wa\.us$"). Blank
 # lines and lines starting with "#" are ignored. This file ships empty in the
-# public repo: a district fills in its own patterns locally and keeps that
-# copy out of version control here, the same way it keeps <district-id>.env.yml
-# out of this repo.
+# public repo. reusable-iac-checks.yml and reusable-onprem-checks.yml run
+# redact-check.sh against this copy without setting REDACT_HOSTNAME_FILE, so
+# their redaction-check job applies no hostname patterns. To check for a
+# district's own domains, keep a patterns file outside this repo (like
+# <district-id>.env.yml) and run redact-check.sh locally with
+# REDACT_HOSTNAME_FILE pointing at it.
