@@ -135,3 +135,72 @@ def test_env_file_check_calls_this_repos_copy_at_a_release_pin(wf):
     lines = [ln.strip() for ln in wf.read_text().splitlines() if ln.strip().startswith(f"uses: {ENV_FILE_CHECK}")]
     assert len(lines) == 1, lines
     assert ENV_FILE_CHECK_PIN.fullmatch(lines[0].removeprefix("uses: ")), lines[0]
+
+
+VALIDATE = "Validate tooling_ref"
+
+
+def validation_steps(wf):
+    return [s for job in load(wf)["jobs"].values() for s in steps(job) if s.get("name") == VALIDATE]
+
+
+@pytest.mark.parametrize("wf", WORKFLOWS, ids=ids)
+def test_every_job_with_a_helper_checkout_validates_tooling_ref_first(wf):
+    for name, job in load(wf)["jobs"].items():
+        if not helper_checkouts(job):
+            continue
+        names = [s.get("name") for s in steps(job)]
+        assert VALIDATE in names, f"{name}: no {VALIDATE} step"
+        first_helper = next(i for i, s in enumerate(steps(job)) if is_checkout(s) and (s.get("with") or {}).get("repository"))
+        assert names.index(VALIDATE) < first_helper, f"{name}: {VALIDATE} must run before the helper checkout"
+
+
+@pytest.mark.parametrize("wf", WORKFLOWS, ids=ids)
+def test_tooling_ref_reaches_run_only_through_env(wf):
+    for s in validation_steps(wf):
+        assert s["env"] == {"TOOLING_REF": "${{ inputs.tooling_ref }}"}
+        assert "${{" not in s["run"]
+    for name, job in load(wf)["jobs"].items():
+        for s in steps(job):
+            assert "inputs.tooling_ref" not in s.get("run", ""), f"{name}: {s.get('name')}"
+
+
+def test_validation_step_is_the_same_everywhere():
+    scripts = {s["run"] for wf in WORKFLOWS for s in validation_steps(wf)}
+    assert len(scripts) == 1, scripts
+
+
+def test_tooling_ref_description_carries_the_trust_note():
+    descs = {load(wf)["on"]["workflow_call"]["inputs"]["tooling_ref"]["description"] for wf in WORKFLOWS}
+    assert len(descs) == 1
+    assert "secrets" in descs.pop()
+
+
+ACCEPTED = ["", "a" * 40, "0123456789abcdef0123456789abcdef01234567", "main", "feat/move-iac.v2_x",
+            "refs/heads/main", "refs/heads/feat/x-y"]
+REJECTED = ["-c", "--upload-pack=x", "a..b", "refs/tags/v1.0.0", "refs/pull/1/merge", "refs/heads/",
+            "main;id", "$(id)", "`id`", "main x", " main", "main\nother", "ma*in", "refs/heads/a b"]
+
+
+def run_validation(value):
+    import subprocess
+    import os
+    script = validation_steps(WORKFLOWS[0])[0]["run"]
+    env = {**os.environ, "TOOLING_REF": value}
+    return subprocess.run(["bash", "-e", "-c", script], env=env, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("value", ACCEPTED, ids=repr)
+def test_validation_accepts(value):
+    r = run_validation(value)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("value", REJECTED, ids=repr)
+def test_validation_rejects_without_echoing_the_value(value):
+    r = run_validation(value)
+    assert r.returncode != 0
+    assert "::error::" in r.stdout
+    fixed_message = run_validation("\x01").stdout
+    if value.strip() and value.strip() not in fixed_message:
+        assert value.strip() not in r.stdout + r.stderr

@@ -68,7 +68,7 @@ name: Reusable on-prem checks
         default: b-internal
       tooling_ref:
         # yamllint disable-line rule:line-length
-        description: "Ref of PSD401/.github whose policy/, scripts/iac/, schemas/iac/ and tools/iac/ run. Empty = this reusable's own commit (job.workflow_sha). Override ONLY to test a change to them"
+        description: "Ref of PSD401/.github whose policy/, scripts/iac/, schemas/iac/ and tools/iac/ run. Empty = this reusable's own commit (job.workflow_sha). Override ONLY to test a change to them: that commit's scripts run with these jobs' token and secrets, so name only a reviewed SHA or branch (empty, a 40-hex SHA, refs/heads/<branch> or <branch>; anything else fails the job)."
         type: string
         required: false
         default: ""
@@ -120,6 +120,28 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
       - name: Checkout redaction policy (this repo, pinned commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -156,6 +178,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
 
       - name: Checkout CI helpers (this repo, pinned commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -247,6 +291,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
 
       - name: Checkout yamllint lockfile (this repo, pinned commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -398,6 +464,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
 
       - name: Checkout CI helpers (this repo, pinned commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -554,6 +642,28 @@ jobs:
         with:
           persist-credentials: false
 
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
       - name: Checkout policy (this repo, pinned commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -610,6 +720,28 @@ jobs:
           name: ${{ needs.plan.outputs.artifact_name }}
           path: ${{ inputs.working_directory }}/terraform
 
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
       - name: Checkout policy (this repo, pinned commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -656,6 +788,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
 
       - name: Checkout policy (this repo, pinned commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
