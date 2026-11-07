@@ -1,0 +1,29 @@
+{
+  "plan_nat_multiple": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_nat_gateway.a",
+        "type": "aws_nat_gateway",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {}
+        }
+      },
+      {
+        "address": "aws_nat_gateway.b",
+        "type": "aws_nat_gateway",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {}
+        }
+      }
+    ]
+  }
+}

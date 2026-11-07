@@ -1,0 +1,16 @@
+{
+	"plan_tags_expression": {
+		"configuration": {
+			"provider_config": {
+				"aws": {
+					"name": "aws",
+					"expressions": {
+						"region": {"constant_value": "us-west-2"},
+						"default_tags": [{"tags": {"references": ["var.tags"]}}]
+					}
+				}
+			}
+		},
+		"resource_changes": []
+	}
+}

@@ -1,0 +1,901 @@
+---
+# Reusable CI/apply contract for Terraform IaC repos (AWS and GCP).
+# yamllint disable-line rule:line-length
+# Called by a per-repo .github/workflows/iac-checks.yml (templates/terraform-app/).
+# See standards/08-iac.md and standards/06-cicd-enforcement.md.
+#
+# Exact caller `with:`/`secrets:` block (dev environment, apply disabled —
+# the usual pull_request-triggered call):
+#
+#   jobs:
+#     dev:
+#       uses: PSD401/.github/.github/workflows/reusable-iac-checks.yml@<40-char SHA> # vX.Y.Z
+#       environment: dev
+#       with:
+#         working_directory: envs/dev
+#         platform: aws
+#         tier: b-internal
+#       secrets:
+#         PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+#         INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+#
+# A merge-triggered call that also applies adds `apply_role_arn` and sets
+# `apply: true`; `apply_role_arn` is the <deploy-role-prefix>-<repo>-<env> role, never
+# the plan role:
+#
+#   jobs:
+#     apply-prod:
+#       uses: PSD401/.github/.github/workflows/reusable-iac-checks.yml@<40-char SHA> # vX.Y.Z
+#       environment: prod
+#       with:
+#         working_directory: envs/prod
+#         platform: aws
+#         tier: a-production
+#         plan_role_arn: arn:aws:iam::<account-id>:role/<plan-role-prefix>-<repo>
+#         apply_role_arn: arn:aws:iam::<account-id>:role/<deploy-role-prefix>-<repo>-prod
+#         apply: true
+#       secrets:
+#         PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+#         INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+#
+# Apply stays an inline job in this file (no separate reusable-iac-apply.yml):
+# its own `apply_role_arn` input and the caller's job-level `environment:`
+# are what give it a distinct, environment-gated OIDC identity from the plan
+# job, so a second workflow file buys nothing a second role ARN doesn't
+# already buy (decided 2026-10-13).
+#
+# Every third-party `uses:` below is pinned to a full commit SHA, with the
+# version tag that SHA resolves to in a trailing comment (standards/06-cicd-
+# enforcement.md §4, "Require full-SHA pinning"). SHAs were resolved with
+# `gh api repos/OWNER/REPO/git/ref/tags/TAG`, following an annotated tag to
+# its commit, 2026-10-14. The env-file-check call below is a reusable in this
+# repo, pinned to a release commit SHA the same way (RELEASING.md).
+#
+# Helper scripts, policy and lockfiles come from this repo at the commit the
+# caller pinned (job.workflow_repository @ job.workflow_sha): inside a called
+# reusable the caller's GITHUB_TOKEN reads only the caller's repo.
+name: Reusable IaC checks
+
+"on":
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Path to the Terraform root module to check"
+        type: string
+        required: true
+      environment:
+        description: "Environment label (dev, staging, prod) used for naming the plan comment and artifact. OIDC trust and approvals come from the caller's job-level environment:, not this string."
+        type: string
+        required: false
+        default: ""
+      platform:
+        description: "Target cloud: aws or gcp"
+        type: string
+        default: aws
+      tier:
+        # yamllint disable-line rule:line-length
+        description: "Repo tier: a-production | b-internal | c-experiment (standards/08-iac.md)"
+        type: string
+        default: b-internal
+      aws_region:
+        description: "AWS region for plan/apply (platform: aws only)"
+        type: string
+        default: us-west-2
+      plan_role_arn:
+        # yamllint disable-line rule:line-length
+        description: "OIDC role ARN to assume for plan (platform: aws only). Read-only; apply never reuses this input."
+        type: string
+        default: ""
+      apply_role_arn:
+        # yamllint disable-line rule:line-length
+        description: "OIDC role ARN to assume for apply (platform: aws only; <deploy-role-prefix>-<repo>-<env>). Required when apply is true — checked at runtime, since workflow_call inputs can't be conditionally required."
+        type: string
+        default: ""
+      apply:
+        # yamllint disable-line rule:line-length
+        description: "Run the apply job against the uploaded plan artifact (merge-triggered callers only)"
+        type: boolean
+        default: false
+      plan_recipient:
+        # yamllint disable-line rule:line-length
+        description: "age public key (age1...) the binary plan is encrypted to before upload. Required when apply is true: the plan job fails without it. Pass vars.PSD_PLAN_RECIPIENT_<ENV>; the matching secret key is the environment's PSD_PLAN_KEY."
+        type: string
+        default: ""
+      account_alias:
+        # yamllint disable-line rule:line-length
+        description: "Which cloud.aws.account_alias / cloud.gcp.project_id key in the private environment file this environment deploys into: prod | nonprod | sandbox. Names the state bucket and sets TF_VAR_account_alias."
+        type: string
+        default: nonprod
+      tooling_ref:
+        # yamllint disable-line rule:line-length
+        description: "Ref of PSD401/.github whose policy/, scripts/iac/, schemas/iac/ and tools/iac/ run. Empty = this reusable's own commit (job.workflow_sha). Override ONLY to test a change to them: that commit's scripts run with these jobs' token and secrets, so name only a reviewed SHA or branch (empty, a 40-hex SHA, refs/heads/<branch> or <branch>; anything else fails the job)."
+        type: string
+        required: false
+        default: ""
+    secrets:
+      INFRACOST_API_KEY:
+        # yamllint disable-line rule:line-length
+        description: "Infracost API key. Required for tier a-production/b-internal callers (the infracost job skips entirely for tier c-experiment)."
+        required: false
+      PSD_ENV_FILE_CONTENTS:
+        # yamllint disable-line rule:line-length
+        description: "Base64 <district-id>.env.yml contents (standards/08-iac.md 'Private environment file'). Validated before any other job reads a resolved value."
+        required: true
+      PSD_PLAN_KEY:
+        # yamllint disable-line rule:line-length
+        description: "age secret key that decrypts the sealed plan in the apply job. Store it as an environment secret on each deploy environment and pass it by name: the apply job sets environment:, so GitHub resolves the environment's secret there."
+        required: false
+
+permissions:
+  contents: read
+
+# No `environment` input: the caller sets `environment:` at job level on the
+# call itself (standards/08-iac.md 'Deploy roles and OIDC'), which is what
+# gates approval, scopes environment secrets, and populates the OIDC token's
+# `environment` claim for this workflow's own jobs. Concurrency keys off
+# working_directory only, since each working_directory maps 1:1 to one env.
+concurrency:
+  group: iac-${{ inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  env-file-check:
+    name: env-file-check
+    # Fully qualified: a `./` path inside a reusable workflow resolves against
+    # the caller's repository, where this file does not exist.
+    # TODO(release): replace <RELEASE-SHA> and vX.Y.Z with the commit and tag of
+    # the first release that ships reusable-env-file-check.yml (RELEASING.md).
+    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@<RELEASE-SHA> # vX.Y.Z
+    secrets:
+      PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+
+  redaction-check:
+    name: redaction-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout caller repo (full history for diff)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout redaction policy (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _redaction-policy
+          sparse-checkout: |
+            policy/redaction/
+          sparse-checkout-cone-mode: false
+
+      - name: Run redaction check
+        # Diff mode scans the lines this PR adds against its base. On a push,
+        # the base is the previous head of the branch.
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            base="origin/${GITHUB_BASE_REF}"
+          elif git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            base="${PUSH_BEFORE}"
+          else
+            base="HEAD~1"
+          fi
+          _redaction-policy/policy/redaction/redact-check.sh --diff "$base"
+
+  fmt-validate-lint:
+    name: fmt / validate / tflint
+    needs: env-file-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.56.0
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint
+
+  build-artifacts:
+    name: build-artifacts
+    needs: fmt-validate-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Hook for per-repo asset bundling (Lambda zips, container images) that
+      # a plan reads via filebase64sha256/image_uri data sources
+      # (standards/08-iac.md 'Known costs of Terraform on AWS'). No-op unless
+      # the calling repo ships an executable ./build.sh in working-directory.
+      - name: Run repo build hook, if present
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          if [ -x ./build.sh ]; then
+            ./build.sh
+          else
+            echo "No executable ./build.sh in ${WORKING_DIRECTORY} — skipping."
+          fi
+
+  plan:
+    name: plan
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # yamllint disable-line rule:line-length
+      id-token: write  # OIDC — caller must grant this; org default token is read-only
+      pull-requests: write  # sticky plan comment (standards/08-iac.md PR flow)
+      issues: write  # drift issue (standards/08-iac.md District defaults "Drift")
+    outputs:
+      # One artifact per working_directory per run: the terraform-app caller
+      # runs this workflow twice in one run (dev and prod), so a bare
+      # tfplan-<run-id> name would collide.
+      artifact_name: ${{ steps.artifact.outputs.name }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout CI helpers (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _standards
+          sparse-checkout: |
+            scripts/iac/
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # tools/iac/requirements.txt pins pyyaml, jsonschema and every transitive
+      # dependency by SHA-256 (standards/06-cicd-enforcement.md §4).
+      - name: Install helper deps (hash-locked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/iac-helpers-venv"
+          "$RUNNER_TEMP/iac-helpers-venv/bin/pip" install --quiet --require-hashes -r "$GITHUB_WORKSPACE/_standards/tools/iac/requirements.txt"
+          echo "$RUNNER_TEMP/iac-helpers-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Name the plan artifact
+        id: artifact
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          slug="$(printf '%s' "$WORKING_DIRECTORY" | tr -c 'A-Za-z0-9' '-')"
+          echo "name=tfplan-${GITHUB_RUN_ID}-${slug}" >> "$GITHUB_OUTPUT"
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        if: inputs.platform == 'aws'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.plan_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      # GCP account/project structure is pattern-level only in this PR
+      # (standards/08-iac.md §Platform: GCP; 08-iac.md 'Deferred to later PRs').
+      - name: Authenticate to GCP (WIF)
+        if: inputs.platform == 'gcp'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
+
+      # The state bucket name and the district defaults live in the private
+      # environment file (08-iac.md 'Private environment file'), never in the
+      # repo. This decodes it inside the job, writes backend.hcl for the
+      # partial backend "s3" block templates/terraform-app ships, and exports
+      # TF_VAR_repo, TF_VAR_account_alias, TF_VAR_alerts_topic_name and
+      # TF_VAR_bedrock_default_model_id (gcp: TF_VAR_project_id). Nothing
+      # prints a value.
+      - name: Resolve private environment file (backend.hcl, TF_VAR_*)
+        env:
+          PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+          PLATFORM: ${{ inputs.platform }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACCOUNT_ALIAS: ${{ inputs.account_alias }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -eu
+          umask 077
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          printf '%s' "$PSD_ENV_FILE_CONTENTS" | base64 -d > "$tmpdir/env.yml"
+          python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/resolve_env_file.py" \
+            --env-file "$tmpdir/env.yml" --github-env "$GITHUB_ENV" \
+            --platform "$PLATFORM" --environment "$ENVIRONMENT" \
+            --account-alias "$ACCOUNT_ALIAS" --repo "$REPO_NAME" \
+            --region "$AWS_REGION" --backend-out backend.hcl
+
+      - name: terraform init
+        run: |
+          if [ -f backend.hcl ]; then
+            terraform init -input=false -backend-config=backend.hcl
+          else
+            terraform init -input=false
+          fi
+
+      - name: terraform plan
+        id: plan
+        # -detailed-exitcode returns 2 when the plan has changes and 1 on
+        # error. Only 1 is a failure; 2 is the normal case for any real PR.
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -out=tfplan -input=false
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -eq 1 ]; then
+            echo "terraform plan failed" >&2
+            exit 1
+          fi
+
+      - name: terraform show (JSON, for checkov/conftest)
+        # Values Terraform marks sensitive are nulled before the JSON leaves
+        # this job: the artifact is readable by anyone with repo read access,
+        # and checkov, conftest and infracost never need the secret itself.
+        # scripts/iac/redact_plan.py masks resource_changes, resource_drift,
+        # planned_values, output_changes and configuration literals, and drops
+        # prior_state and variables (tested in scripts/iac/test_redact_plan.py).
+        # Infracost's FAQ (infracost.io/docs/faq, read 2026-10-14) states the
+        # CLI sends only cost-related parameters to its pricing API, never the
+        # plan JSON, so the redacted file is also what it reads.
+        run: |
+          terraform show -json tfplan > tfplan.raw.json
+          python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/redact_plan.py" tfplan.raw.json tfplan.json
+          rm -f tfplan.raw.json
+
+      - name: terraform show (human-readable, for PR comment)
+        run: terraform show -no-color tfplan > tfplan.txt
+
+      # The binary tfplan holds sensitive values in plaintext, and anyone with
+      # repo read access can download a run's artifacts. Only the apply job in
+      # this same run reads it, so PR and schedule runs drop it and upload the
+      # redacted JSON alone. Apply runs upload it only as tfplan.age, encrypted
+      # to the environment's age public key (scripts/iac/plan_seal.py removes
+      # the plaintext after sealing). The apply job decrypts it with the
+      # environment secret PSD_PLAN_KEY.
+      - name: Drop the binary plan when no apply job will consume it
+        if: ${{ !(inputs.apply && github.event_name != 'schedule') }}
+        run: rm -f tfplan
+
+      - name: Install age (pinned, SHA-256 checked)
+        if: inputs.apply && github.event_name != 'schedule'
+        run: bash "$GITHUB_WORKSPACE/_standards/scripts/iac/install_age.sh"
+
+      - name: Seal the binary plan for the apply job (age)
+        if: inputs.apply && github.event_name != 'schedule'
+        env:
+          PLAN_RECIPIENT: ${{ inputs.plan_recipient }}
+        # yamllint disable-line rule:line-length
+        run: python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/plan_seal.py" seal --recipient "$PLAN_RECIPIENT" tfplan tfplan.age
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: |
+            ${{ inputs.working_directory }}/tfplan.age
+            ${{ inputs.working_directory }}/tfplan.json
+          # One day covers the merge-triggered apply in the same run.
+          retention-days: 1
+
+      - name: Post plan as a sticky PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const workingDirectory = process.env.WORKING_DIRECTORY;
+            const planText = fs.readFileSync(
+              path.join(workingDirectory, 'tfplan.txt'),
+              'utf8'
+            ).slice(0, 65000);
+            const marker = `<!-- reusable-iac-checks plan comment: ${workingDirectory} -->`;
+            const body = `${marker}\n### Terraform plan: \`${workingDirectory}\`\n<details><summary>Plan output (truncated)</summary>\n\n\`\`\`\n${planText}\n\`\`\`\n</details>`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      # Weekly drift scan (standards/08-iac.md District defaults "Drift"):
+      # -detailed-exitcode's 2 means the schedule-triggered plan found real
+      # changes nobody applied. No PR exists on a schedule run, so this opens
+      # or updates one issue per working_directory instead of commenting.
+      - name: Open or update a drift issue
+        if: github.event_name == 'schedule' && steps.plan.outputs.exit_code == '2'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        with:
+          script: |
+            const workingDirectory = process.env.WORKING_DIRECTORY;
+            const label = 'drift';
+            const marker = `<!-- reusable-iac-checks drift issue: ${workingDirectory} -->`;
+            const title = `Drift detected: ${workingDirectory}`;
+
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (err) {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+                color: 'd93f0b',
+                description: 'The weekly scheduled plan found changes nobody applied.',
+              });
+            }
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+            const existing = openIssues.find((i) => i.body && i.body.includes(marker));
+            const body = `${marker}\nThe weekly schedule run for \`${workingDirectory}\` found drift at ${context.sha} (\`terraform plan -detailed-exitcode\` exited 2). Reconcile or apply (standards/08-iac.md District defaults "Drift").`;
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                title,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: [label],
+              });
+            }
+
+  checkov:
+    name: checkov
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write  # upload-sarif
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.plan.outputs.artifact_name }}
+          path: ${{ inputs.working_directory }}
+
+      - name: Checkov (plan JSON)
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12
+        with:
+          file: ${{ inputs.working_directory }}/tfplan.json
+          framework: terraform_plan
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: false
+
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+
+  conftest:
+    name: conftest
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.plan.outputs.artifact_name }}
+          path: ${{ inputs.working_directory }}
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout policy (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _policy
+          sparse-checkout: |
+            policy/conftest/
+            schemas/iac/exceptions.schema.json
+            scripts/iac/check_exceptions.py
+            scripts/iac/install_conftest.sh
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      # install_conftest.sh checks the tarball against a pinned SHA-256 and
+      # adds its directory to GITHUB_PATH for the later conftest steps.
+      - name: Install conftest
+        run: bash _policy/scripts/iac/install_conftest.sh "$RUNNER_TEMP/conftest-bin"
+
+      # --all-namespaces is required: every rule here lives in a package
+      # named `aws`/`gcp`, not conftest's default `main` namespace, so a bare
+      # `conftest test` with neither flag silently evaluates zero policies
+      # and always exits 0. --data wires the calling repo's own
+      # exceptions.yml into `data.exceptions`, which the rego exception
+      # helpers read (policy/conftest/README.md).
+      - name: conftest test (tags, regions, IAM bans, lifecycle, backend naming)
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          conftest test \
+            "${WORKING_DIRECTORY}/tfplan.json" \
+            --policy "_policy/policy/conftest/${PLATFORM}" \
+            --data exceptions.yml \
+            --all-namespaces
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # tools/iac/requirements.txt pins pyyaml, jsonschema and every transitive
+      # dependency by SHA-256 (standards/06-cicd-enforcement.md §4).
+      - name: Install helper deps (hash-locked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/iac-helpers-venv"
+          "$RUNNER_TEMP/iac-helpers-venv/bin/pip" install --quiet --require-hashes -r _policy/tools/iac/requirements.txt
+          echo "$RUNNER_TEMP/iac-helpers-venv/bin" >> "$GITHUB_PATH"
+
+      # Schema-validates exceptions.yml when present. No standard requires a
+      # specific entry of every AWS/GCP repo today, so this passes a repo with
+      # no file; stale entries are conftest's exceptions_audit job above.
+      - name: Exceptions cross-check (standards/08-iac.md 'Exceptions file')
+        run: |
+          python3 _policy/scripts/iac/check_exceptions.py \
+            --schema _policy/schemas/iac/exceptions.schema.json exceptions.yml
+
+  infracost:
+    name: infracost
+    # Gates on tier, not a separate opt-in flag: no shipped caller ever set
+    # the old infracost_enabled flag, so 12-cloud-cost.md rule 12's cost
+    # diff never posted for any tier. Tier a-production and b-internal get
+    # the diff; tier c-experiment skips it.
+    if: inputs.tier != 'c-experiment'
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    continue-on-error: true  # non-blocking (standards/12-cloud-cost.md rule 12)
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.plan.outputs.artifact_name }}
+          path: ${{ inputs.working_directory }}
+
+      - uses: infracost/actions/setup@a5783eb98adc93aa7a0049fce0abb06fdd30770a # v5.0.1
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Generate Infracost diff
+        # yamllint disable-line rule:line-length
+        run: infracost diff --path tfplan.json --format json --out-file infracost.json
+
+      # infracost/actions has no comment/ action at any pinned release: its
+      # README (v5.0.1) posts the comment with the CLI that setup installs.
+      # scripts/iac/check_action_pins.py fails CI on a pin to a missing path.
+      - name: Post Infracost comment
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          infracost comment github --path=infracost.json \
+            --repo="$GITHUB_REPOSITORY" --github-token="$GITHUB_TOKEN" \
+            --pull-request="$PR_NUMBER" --behavior=update
+
+  apply:
+    name: apply
+    # Inline job, not a separate reusable-iac-apply.yml. The `environment:`
+    # below is what makes the OIDC sub environment-scoped
+    # (repo:<owner>/<repo>:environment:<env>) and what applies the caller
+    # repo's environment protection rules (required reviewers). A caller job
+    # that `uses:` this workflow cannot set `environment:` itself (GitHub
+    # allows only name, uses, with, secrets, needs, if, permissions there),
+    # so this job is the only place the gate can live
+    # (standards/08-iac.md 'Deploy roles and OIDC').
+    # github.event_name != 'schedule' is a second, explicit guard: apply
+    # never runs on the weekly drift-scan trigger, even if a caller mistakenly
+    # passes apply: true for it.
+    if: inputs.apply && github.event_name != 'schedule'
+    needs: [plan, checkov, conftest]
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # yamllint disable-line rule:line-length
+      id-token: write  # OIDC — caller must grant this; org default token is read-only
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout CI helpers (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _standards
+          sparse-checkout: |
+            scripts/iac/
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # tools/iac/requirements.txt pins pyyaml, jsonschema and every transitive
+      # dependency by SHA-256 (standards/06-cicd-enforcement.md §4).
+      - name: Install helper deps (hash-locked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/iac-helpers-venv"
+          "$RUNNER_TEMP/iac-helpers-venv/bin/pip" install --quiet --require-hashes -r "$GITHUB_WORKSPACE/_standards/tools/iac/requirements.txt"
+          echo "$RUNNER_TEMP/iac-helpers-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Require apply_role_arn when apply is true
+        # workflow_call inputs can't be conditionally required declaratively,
+        # so this is a runtime check instead of a schema constraint.
+        if: inputs.platform == 'aws' && inputs.apply_role_arn == ''
+        run: |
+          echo "apply: true but no apply_role_arn was passed. Set with.apply_role_arn to the deploy role ARN for this environment." >&2
+          exit 1
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        if: inputs.platform == 'aws'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.apply_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Authenticate to GCP (WIF)
+        if: inputs.platform == 'gcp'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.plan.outputs.artifact_name }}
+          path: ${{ inputs.working_directory }}
+
+      - name: Install age (pinned, SHA-256 checked)
+        run: bash "$GITHUB_WORKSPACE/_standards/scripts/iac/install_age.sh"
+
+      # PSD_PLAN_KEY resolves to this job's environment secret, because the job
+      # sets environment:. GitHub docs, "Reuse workflows" (read 2026-10-23):
+      # "The caller workflow must still pass the secret. Use secrets: inherit or
+      # pass the secret by name." and the environment secret "takes precedence
+      # ... when the caller uses either secrets: inherit or ${{ secrets.MY_SECRET }}".
+      # age reads the key on stdin, so it never touches disk.
+      - name: Open the sealed plan (age)
+        env:
+          PSD_PLAN_KEY: ${{ secrets.PSD_PLAN_KEY }}
+        run: python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/plan_seal.py" open tfplan.age tfplan
+
+      # Same resolution as the plan job: the saved plan is applied against
+      # the state bucket the private environment file names.
+      - name: Resolve private environment file (backend.hcl, TF_VAR_*)
+        env:
+          PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+          PLATFORM: ${{ inputs.platform }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACCOUNT_ALIAS: ${{ inputs.account_alias }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -eu
+          umask 077
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          printf '%s' "$PSD_ENV_FILE_CONTENTS" | base64 -d > "$tmpdir/env.yml"
+          python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/resolve_env_file.py" \
+            --env-file "$tmpdir/env.yml" --github-env "$GITHUB_ENV" \
+            --platform "$PLATFORM" --environment "$ENVIRONMENT" \
+            --account-alias "$ACCOUNT_ALIAS" --repo "$REPO_NAME" \
+            --region "$AWS_REGION" --backend-out backend.hcl
+
+      - name: terraform init
+        run: |
+          if [ -f backend.hcl ]; then
+            terraform init -input=false -backend-config=backend.hcl
+          else
+            terraform init -input=false
+          fi
+
+      # Never re-plans: applies the exact artifact this run uploaded in the
+      # plan job (standards/08-iac.md 'Saved-plan handoff'), decrypted by the
+      # step above into working-directory as ./tfplan.
+      - name: terraform apply (saved plan)
+        run: terraform apply -input=false tfplan

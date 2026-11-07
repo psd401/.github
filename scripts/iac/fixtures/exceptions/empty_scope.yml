@@ -1,0 +1,11 @@
+# ABOUTME: check_exceptions.py test fixture: empty scope.
+# ABOUTME: Fake entries only.
+exceptions:
+  - id: empty-scope
+    standard: "08-iac.md#student-pii-in-logs"
+    rule: Student-pii log groups cap retention at 30 days
+    reason: An empty scope prefix-matches every resource address
+    scope: ""
+    approved_by: network admin role
+    status: active
+    expires: none

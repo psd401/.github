@@ -49,6 +49,20 @@ reusable itself (`job.workflow_sha`), not from `main`:
   `tools/iac/requirements.txt` with `pip --require-hashes`. To bump those deps,
   edit `tools/iac/requirements*.in` and rerun the `uv pip compile` command in
   each `.txt` header with an `--exclude-newer` date 7+ days ago.
+- `reusable-iac-checks.yml` and `reusable-onprem-checks.yml` run `policy/`,
+  `scripts/iac/`, `schemas/iac/` and the `tools/iac/` lockfiles at that commit
+  (`tooling_ref` overrides it only for testing). age and conftest install
+  through `scripts/iac/install_*.sh`, which check a pinned SHA-256.
+- Those two call `reusable-env-file-check.yml` by its own release SHA, not
+  `job.workflow_sha` (a `uses:` can't take an expression). Cut the release that
+  carries a change to the env-file check first, then bump that pin in both.
+  Until the first such release they carry the placeholder
+  `@<RELEASE-SHA> # vX.Y.Z`, and
+  `test_env_file_check_calls_this_repos_copy_at_a_release_pin` in
+  `scripts/iac/test_reusable_iac_onprem_checkout.py` is a strict expected
+  failure. Replacing the placeholder turns the marker off, so the test then
+  fails unless the pin is a 40-hex SHA followed by `# vX.Y.Z`. In the same PR,
+  delete the `xfail` marker and the `TODO(release)` comments.
 
 ## Bumping a locked tool
 

@@ -1,0 +1,11 @@
+# ABOUTME: check_exceptions.py test fixture: rule44 expired.
+# ABOUTME: Fake entries only.
+exceptions:
+  - id: direct-install
+    standard: "15-onprem-platform.md#11-app-runtime-bones"
+    rule: An app runs as containers under compose
+    reason: Vendor appliance installs from a distro package
+    scope: infra/systemd/app.service
+    approved_by: network admin role
+    status: active
+    expires: "2026-01-01"

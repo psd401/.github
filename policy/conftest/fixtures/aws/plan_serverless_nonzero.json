@@ -1,0 +1,29 @@
+{
+  "plan_serverless_nonzero": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_rds_cluster.app",
+        "type": "aws_rds_cluster",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "tags": {
+              "psd:environment": "dev"
+            },
+            "serverlessv2_scaling_configuration": [
+              {
+                "min_capacity": 2,
+                "max_capacity": 4
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,12 +1,15 @@
-# ABOUTME: Runs the scripts/iac/ pytest suite on PRs that change the IaC reusables or the files they load.
-# ABOUTME: Callers pin reusable-env-file-check.yml to a release SHA, so changes must pass here before a release.
+# ABOUTME: Runs the scripts/iac/ pytest suite, conftest verify and the action-pin check on PRs that change workflows or the IaC files.
+# ABOUTME: Callers pin the IaC reusables to a release SHA, so changes must pass here before a release.
 name: IaC reusable tests
 
 on:
   pull_request:
     paths:
-      - .github/workflows/reusable-env-file-check.yml
-      - .github/workflows/iac-tests.yml
+      # Every workflow and starter template: the action-pins job scans them all.
+      - .github/workflows/**
+      - workflow-templates/**
+      - .github/actionlint.yaml
+      - policy/**
       - schemas/iac/**
       - scripts/iac/**
       - tools/iac/**
@@ -21,7 +24,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,4 +36,36 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/iac-test-venv"
           "$RUNNER_TEMP/iac-test-venv/bin/pip" install --quiet --require-hashes -r tools/iac/requirements-test.txt
-      - run: '"$RUNNER_TEMP/iac-test-venv/bin/python" -m pytest -p no:cacheprovider scripts/iac -v'
+      # Both installers check the release tarball against a pinned SHA-256
+      # and append their bin directory to GITHUB_PATH.
+      - name: Install age and conftest (pinned, SHA-256 checked)
+        run: |
+          bash scripts/iac/install_age.sh "$RUNNER_TEMP/age-bin"
+          bash scripts/iac/install_conftest.sh "$RUNNER_TEMP/conftest-bin"
+      # REQUIRE_AGE=1 turns test_plan_seal.py's "age not on PATH" skip into a failure.
+      - name: pytest
+        env:
+          REQUIRE_AGE: "1"
+        run: '"$RUNNER_TEMP/iac-test-venv/bin/python" -m pytest -p no:cacheprovider scripts/iac -v'
+      - name: conftest verify (policy unit tests)
+        run: |
+          for platform in aws gcp onprem; do
+            conftest verify --policy "policy/conftest/$platform" --data "policy/conftest/fixtures/$platform"
+          done
+
+  # Every SHA-pinned `uses:` in this repo's workflows and starter templates
+  # must exist at its SHA and must not declare a removed Node runtime.
+  # actionlint and zizmor read only the calling file, so a pin to a missing
+  # path (an infracost/actions/comment pin, 2026-10-22) passes both.
+  action-pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check pinned action targets
+        run: >-
+          python3 scripts/iac/check_action_pins.py
+          .github/workflows/*.yml
+          workflow-templates/*.yml

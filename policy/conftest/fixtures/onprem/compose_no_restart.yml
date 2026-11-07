@@ -1,0 +1,7 @@
+# ABOUTME: conftest verify fixture for the onprem package: compose no restart.
+# ABOUTME: Fake services and images only.
+---
+compose_no_restart:
+  services:
+    app:
+      image: ghcr.io/psd401/app:1.4.2

@@ -1,0 +1,19 @@
+# ABOUTME: conftest verify fixture for the onprem package: compose ok.
+# ABOUTME: Fake services and images only.
+---
+compose_ok:
+  services:
+    app:
+      image: ghcr.io/psd401/app:1.4.2
+      restart: unless-stopped
+      ports:
+        - "127.0.0.1:8080:8080"
+      cap_drop:
+        - ALL
+      security_opt:
+        - "no-new-privileges:true"
+      read_only: true
+      user: "10001:10001"
+    worker:
+      image: ghcr.io/psd401/worker:1.4.2
+      restart: unless-stopped

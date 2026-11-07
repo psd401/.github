@@ -1,0 +1,220 @@
+{
+  "plan_tags_variable_values": {
+    "format_version": "1.2",
+    "terraform_version": "1.12.5",
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "expressions": {
+            "region": {
+              "constant_value": "us-west-2"
+            },
+            "default_tags": [
+              {
+                "tags": {
+                  "psd:application": {
+                    "references": [
+                      "var.application"
+                    ]
+                  },
+                  "psd:environment": {
+                    "constant_value": "dev"
+                  },
+                  "psd:owner": {
+                    "references": [
+                      "var.owner"
+                    ]
+                  },
+                  "psd:managed-by": {
+                    "constant_value": "terraform"
+                  },
+                  "psd:repo": {
+                    "references": [
+                      "var.repo"
+                    ]
+                  },
+                  "psd:data-classification": {
+                    "references": [
+                      "var.data_classification"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "root_module": {
+        "resources": [
+          {
+            "address": "aws_cloudwatch_metric_alarm.lambda_errors",
+            "type": "aws_cloudwatch_metric_alarm",
+            "expressions": {
+              "dimensions": {
+                "references": [
+                  "aws_lambda_function.app.function_name"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "resource_changes": [
+      {
+        "address": "aws_iam_role.deploy",
+        "type": "aws_iam_role",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {}
+        }
+      },
+      {
+        "address": "aws_s3_bucket.artifacts",
+        "type": "aws_s3_bucket",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {}
+        }
+      },
+      {
+        "address": "aws_s3_bucket_versioning.artifacts",
+        "type": "aws_s3_bucket_versioning",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "bucket": "aws_s3_bucket.artifacts",
+            "versioning_configuration": [
+              {
+                "status": "Enabled"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "address": "aws_s3_bucket_lifecycle_configuration.artifacts",
+        "type": "aws_s3_bucket_lifecycle_configuration",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "bucket": "aws_s3_bucket.artifacts",
+            "rule": [
+              {
+                "noncurrent_version_expiration": {
+                  "noncurrent_days": 30
+                },
+                "abort_incomplete_multipart_upload": {
+                  "days_after_initiation": 7
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "address": "aws_vpc_endpoint.s3",
+        "type": "aws_vpc_endpoint",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "service_name": "com.amazonaws.us-west-2.s3"
+          }
+        }
+      },
+      {
+        "address": "aws_vpc_endpoint.dynamodb",
+        "type": "aws_vpc_endpoint",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "service_name": "com.amazonaws.us-west-2.dynamodb"
+          }
+        }
+      },
+      {
+        "address": "aws_nat_gateway.main",
+        "type": "aws_nat_gateway",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {}
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_group.app",
+        "type": "aws_cloudwatch_log_group",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "name": "/aws/lambda/example-app",
+            "retention_in_days": 90
+          }
+        }
+      },
+      {
+        "address": "aws_lambda_function.app",
+        "type": "aws_lambda_function",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "function_name": "example-app",
+            "architectures": [
+              "arm64"
+            ]
+          }
+        }
+      },
+      {
+        "address": "aws_rds_cluster.app",
+        "type": "aws_rds_cluster",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "tags": {
+              "psd:environment": "dev"
+            },
+            "serverlessv2_scaling_configuration": [
+              {
+                "min_capacity": 0,
+                "max_capacity": 4
+              }
+            ]
+          }
+        }
+      },
+      {
+        "address": "aws_db_instance.app",
+        "type": "aws_db_instance",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "publicly_accessible": false
+          }
+        }
+      }
+    ]
+  }
+}

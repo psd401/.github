@@ -1,0 +1,24 @@
+{
+  "plan_lambda_log_missing": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_lambda_function.app",
+        "type": "aws_lambda_function",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "function_name": "app",
+            "architectures": [
+              "arm64"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

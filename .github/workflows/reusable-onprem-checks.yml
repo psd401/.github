@@ -1,0 +1,941 @@
+---
+# yamllint disable-line rule:line-length
+# Reusable CI contract for on-prem Proxmox repos (VM provisioning + compose apps).
+# Called by a per-repo .github/workflows/iac-checks.yml (templates/proxmox-vm/,
+# templates/onprem-app/). See standards/15-onprem-platform.md and
+# standards/08-iac.md §Platform: Proxmox.
+#
+# Kept as its own workflow, not folded into reusable-iac-checks.yml: on-prem
+# validates with Packer + OpenTofu against a Proxmox cluster, not the
+# AWS/GCP OIDC plan path, and needs a self-hosted runner that can reach that
+# cluster (runner provisioning itself is a named gap, 08-iac.md 'Deferred to later PRs').
+#
+# Every third-party `uses:` below is pinned to a full commit SHA, with the
+# version tag that SHA resolves to in a trailing comment (standards/06-cicd-
+# enforcement.md §4, "Require full-SHA pinning"). SHAs were resolved with
+# `gh api repos/OWNER/REPO/git/ref/tags/TAG`, following an annotated tag to
+# its commit, 2026-10-14. The env-file-check call below is a reusable in this
+# repo, pinned to a release commit SHA the same way (RELEASING.md).
+#
+# Helper scripts, policy and lockfiles come from this repo at the commit the
+# caller pinned (job.workflow_repository @ job.workflow_sha): inside a called
+# reusable the caller's GITHUB_TOKEN reads only the caller's repo.
+#
+# No `runs-on` input: standards/08-iac.md's published contract for this
+# workflow lists only `working_directory` and `tier` (runner provisioning
+# itself is a named gap, 08-iac.md 'Deferred to later PRs'), and neither caller template passes
+# one. The self-hosted runner label is set directly on the jobs below instead.
+#
+# `self_hosted_runner` (default false) gates the two jobs that need the
+# `[self-hosted, proxmox]` runner, packer-validate and plan: until a repo's
+# runner is live, those jobs would never complete and could block every PR
+# under a Tier B ruleset. A repo sets `with.self_hosted_runner: true` once
+# its runner is up; until then, self-hosted-runner-notice posts a notice
+# explaining why those two jobs did not run.
+#
+# Exact caller `with:`/`secrets:` block (templates/onprem-app/,
+# templates/proxmox-vm/):
+#
+#   jobs:
+#     onprem-checks:
+#       uses: PSD401/.github/.github/workflows/reusable-onprem-checks.yml@<40-char SHA> # vX.Y.Z
+#       with:
+#         working_directory: .
+#         tier: b-internal
+#         self_hosted_runner: false
+#       secrets:
+#         PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+#         PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+#
+# working_directory is the repo root for a compose-only app (templates/
+# onprem-app, no terraform/ dir) and the VM-bones root for a Proxmox VM repo
+# (templates/proxmox-vm, terraform/ + packer/ live under it). The
+# detect-layout job below tells every later job whether terraform/ exists,
+# since not every on-prem repo carries both shapes.
+name: Reusable on-prem checks
+
+"on":
+  workflow_call:
+    inputs:
+      working_directory:
+        # yamllint disable-line rule:line-length
+        description: "Path to the Proxmox VM or on-prem app root (templates/proxmox-vm, templates/onprem-app)"
+        type: string
+        required: true
+      tier:
+        description: "Repo tier: a-production | b-internal | c-experiment"
+        type: string
+        default: b-internal
+      tooling_ref:
+        # yamllint disable-line rule:line-length
+        description: "Ref of PSD401/.github whose policy/, scripts/iac/, schemas/iac/ and tools/iac/ run. Empty = this reusable's own commit (job.workflow_sha). Override ONLY to test a change to them: that commit's scripts run with these jobs' token and secrets, so name only a reviewed SHA or branch (empty, a 40-hex SHA, refs/heads/<branch> or <branch>; anything else fails the job)."
+        type: string
+        required: false
+        default: ""
+      self_hosted_runner:
+        # yamllint disable-line rule:line-length
+        description: "Whether this repo has a live [self-hosted, proxmox] runner. packer-validate and plan only run when true; otherwise self-hosted-runner-notice posts why they were skipped."
+        type: boolean
+        default: false
+    secrets:
+      PROXMOX_API_TOKEN:
+        description: >-
+          Proxmox API token, scoped to one resource pool
+          (standards/15-onprem-platform.md rule 3). Delivered to the runner
+          from the district's secret store; this workflow only consumes it.
+        required: true
+      PSD_ENV_FILE_CONTENTS:
+        # yamllint disable-line rule:line-length
+        description: "Base64 <district-id>.env.yml contents (standards/08-iac.md 'Private environment file'). Validated before any other job reads a resolved value."
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onprem-${{ inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  env-file-check:
+    name: env-file-check
+    # Fully qualified: a `./` path inside a reusable workflow resolves against
+    # the caller's repository, where this file does not exist.
+    # TODO(release): replace <RELEASE-SHA> and vX.Y.Z with the commit and tag of
+    # the first release that ships reusable-env-file-check.yml (RELEASING.md).
+    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@<RELEASE-SHA> # vX.Y.Z
+    secrets:
+      PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+
+  redaction-check:
+    name: redaction-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout caller repo (full history for diff)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout redaction policy (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _redaction-policy
+          sparse-checkout: |
+            policy/redaction/
+          sparse-checkout-cone-mode: false
+
+      - name: Run redaction check
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            base="origin/${GITHUB_BASE_REF}"
+          elif git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            base="${PUSH_BEFORE}"
+          else
+            base="HEAD~1"
+          fi
+          _redaction-policy/policy/redaction/redact-check.sh --diff "$base"
+
+  detect-layout:
+    name: detect-layout
+    needs: env-file-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      has_terraform: ${{ steps.detect.outputs.has_terraform }}
+      has_compose: ${{ steps.detect.outputs.has_compose }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout CI helpers (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _standards
+          sparse-checkout: |
+            schemas/iac/exceptions.schema.json
+            scripts/iac/check_exceptions.py
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      # A single reusable workflow covers both repo shapes (15-onprem-
+      # platform.md): a compose-only app repo (templates/onprem-app, no
+      # terraform/) and a Proxmox VM repo (templates/proxmox-vm,
+      # terraform/ + packer/). Later jobs read these outputs instead of
+      # assuming either path exists.
+      - name: Detect which on-prem shapes this repo carries
+        id: detect
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          if [ -d "${WORKING_DIRECTORY}/terraform" ]; then
+            echo "has_terraform=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_terraform=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "${WORKING_DIRECTORY}/docker-compose.yml" ]; then
+            echo "has_compose=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_compose=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 15-onprem-platform.md rule 44: an app runs as containers under compose.
+      # A repo with neither terraform/ nor docker-compose.yml is a non-container
+      # install, allowed only with an active exceptions.yml entry citing rule 44.
+      # check_exceptions.py matches standard, status and expiry on one entry
+      # (scripts/iac/fixtures/exceptions/rule44_retired_plus_unrelated_active.yml
+      # is the shape two whole-file greps let through).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: steps.detect.outputs.has_terraform == 'false' && steps.detect.outputs.has_compose == 'false'
+        with:
+          python-version: "3.12"
+
+      - name: Install helper deps (hash-locked)
+        if: steps.detect.outputs.has_terraform == 'false' && steps.detect.outputs.has_compose == 'false'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/onprem-helpers-venv"
+          "$RUNNER_TEMP/onprem-helpers-venv/bin/pip" install --quiet --require-hashes -r "$GITHUB_WORKSPACE/_standards/tools/iac/requirements.txt"
+          echo "$RUNNER_TEMP/onprem-helpers-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Require a container runtime shape (15-onprem-platform.md rule 44)
+        if: steps.detect.outputs.has_terraform == 'false' && steps.detect.outputs.has_compose == 'false'
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          echo "::notice::no terraform/ and no docker-compose.yml: an on-prem app runs as containers under compose (15-onprem-platform.md rule 44), so an active exceptions.yml entry citing 15-onprem-platform.md#11-app-runtime-bones is required."
+          python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/check_exceptions.py" \
+            --schema "$GITHUB_WORKSPACE/_standards/schemas/iac/exceptions.schema.json" \
+            --require 15-onprem-platform.md#11-app-runtime-bones exceptions.yml
+
+      # 15-onprem-platform.md rule 3: a compose app repo ships the layout from
+      # templates/onprem-app. A VM-only repo (terraform/ and no compose file)
+      # is exempt from the app-layout paths.
+      - name: Require the app repo layout (15-onprem-platform.md rule 3)
+        if: steps.detect.outputs.has_compose == 'true'
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          missing=0
+          for p in infra docs/runbooks compose/env.example; do
+            if [ ! -e "${WORKING_DIRECTORY}/$p" ]; then
+              echo "::error::missing required path: $p (15-onprem-platform.md rule 3)"
+              missing=1
+            fi
+          done
+          exit $missing
+
+  compose-systemd-lint:
+    name: compose-lint / systemd-lint
+    needs: env-file-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout yamllint lockfile (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _standards
+          sparse-checkout: |
+            tools/iac/requirements-yamllint.txt
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # tools/iac/requirements-yamllint.txt pins yamllint and its dependencies
+      # by SHA-256 (standards/06-cicd-enforcement.md §4).
+      - name: Install yamllint (hash-locked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/yamllint-venv"
+          "$RUNNER_TEMP/yamllint-venv/bin/pip" install --quiet --require-hashes -r "$GITHUB_WORKSPACE/_standards/tools/iac/requirements-yamllint.txt"
+          echo "$RUNNER_TEMP/yamllint-venv/bin" >> "$GITHUB_PATH"
+
+      - name: yamllint
+        run: yamllint .
+
+      - name: docker compose config
+        # templates/onprem-app ships docker-compose.yml at repo root
+        # (15-onprem-platform.md's layout rule), not under docker/.
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          if [ -f docker-compose.yml ]; then
+            docker compose config -q
+          else
+            echo "No docker-compose.yml in ${WORKING_DIRECTORY} — skipping."
+          fi
+
+  self-hosted-runner-notice:
+    name: self-hosted-runner-notice
+    needs: env-file-check
+    if: inputs.self_hosted_runner != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Explain why packer-validate and plan did not run
+        run: |
+          # yamllint disable-line rule:line-length
+          echo "::notice::self_hosted_runner is false for this caller, so packer-validate and plan were skipped. Pass with.self_hosted_runner true once a [self-hosted, proxmox] runner is live for this repo (runner provisioning is a named gap, 08-iac.md 'Deferred to later PRs')."
+
+  packer-validate:
+    name: packer-validate
+    needs: env-file-check
+    if: inputs.self_hosted_runner == true
+    runs-on: [self-hosted, proxmox]
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3
+        with:
+          version: "1.16.0"
+
+      - name: packer init
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          if [ -d packer ]; then
+            packer init packer/
+          else
+            echo "No packer/ in ${WORKING_DIRECTORY} — skipping."
+          fi
+
+      - name: packer validate
+        run: |
+          if [ -d packer ]; then
+            packer validate -syntax-only packer/
+          fi
+
+  terraform-validate:
+    name: terraform-validate (OpenTofu)
+    needs: [env-file-check, detect-layout]
+    # A compose-only app repo (templates/onprem-app) ships no terraform/,
+    # so there is nothing here to fmt/init/validate — skip outright rather
+    # than cd-ing into a directory that doesn't exist.
+    if: needs.detect-layout.outputs.has_terraform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same CLI as the AWS/GCP job (08-iac.md 'Stack decision'): HashiCorp
+      # Terraform, with OpenTofu as the sanctioned fallback. Lock files in
+      # templates/proxmox-vm are generated by this CLI (registry.terraform.io).
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.64.0
+
+      # yamllint disable-line rule:line-length
+      - name: tflint (generic ruleset — no Proxmox-aware ruleset exists upstream, 08-iac.md 'Deferred to later PRs')
+        run: |
+          tflint --init
+          tflint
+
+  plan:
+    name: plan
+    needs: [packer-validate, terraform-validate, detect-layout]
+    # Same guard as terraform-validate (nothing to plan for a compose-only
+    # app repo), plus the self_hosted_runner gate packer-validate also uses.
+    if: inputs.self_hosted_runner == true && needs.detect-layout.outputs.has_terraform == 'true'
+    runs-on: [self-hosted, proxmox]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write  # sticky plan comment (standards/08-iac.md PR flow)
+    outputs:
+      # One artifact per working_directory per run (same reason as
+      # reusable-iac-checks.yml: a caller may run this twice in one run).
+      artifact_name: ${{ steps.artifact.outputs.name }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout CI helpers (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _standards
+          sparse-checkout: |
+            scripts/iac/redact_plan.py
+            scripts/iac/resolve_env_file.py
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      # Self-hosted runner: no setup-python, so the venv comes from the
+      # runner's own python3 (needs the venv module, python3-venv on Debian).
+      - name: Install helper deps (hash-locked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/onprem-helpers-venv"
+          "$RUNNER_TEMP/onprem-helpers-venv/bin/pip" install --quiet --require-hashes -r "$GITHUB_WORKSPACE/_standards/tools/iac/requirements.txt"
+          echo "$RUNNER_TEMP/onprem-helpers-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Name the plan artifact
+        id: artifact
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          slug="$(printf '%s' "$WORKING_DIRECTORY" | tr -c 'A-Za-z0-9' '-')"
+          echo "name=tfplan-${GITHUB_RUN_ID}-${slug}" >> "$GITHUB_OUTPUT"
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+
+      # The Proxmox endpoint, this repo's resource pool, DNS zone, syslog,
+      # Zabbix, NTP and patch window live in the private environment file
+      # (15-onprem-platform.md §17). This decodes it inside the job and
+      # exports them as TF_VAR_*/PKR_VAR_* for the variables
+      # templates/proxmox-vm declares. Nothing prints a value. No backend
+      # config: the shared on-prem state store is a named gap (15 §13).
+      - name: Resolve private environment file (TF_VAR_*, PKR_VAR_*)
+        env:
+          PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -eu
+          umask 077
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          printf '%s' "$PSD_ENV_FILE_CONTENTS" | base64 -d > "$tmpdir/env.yml"
+          python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/resolve_env_file.py" \
+            --env-file "$tmpdir/env.yml" --github-env "$GITHUB_ENV" \
+            --platform proxmox --repo "$REPO_NAME"
+
+      - name: terraform init
+        env:
+          PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+        run: terraform init -input=false
+
+      - name: terraform plan
+        id: plan
+        # -detailed-exitcode returns 2 when the plan has changes and 1 on
+        # error. Only 1 is a failure; 2 is the normal case for any real PR.
+        env:
+          PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -out=tfplan -input=false
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -eq 1 ]; then
+            echo "terraform plan failed" >&2
+            exit 1
+          fi
+
+      - name: terraform show (JSON, for conftest)
+        # Values Terraform marks sensitive are nulled before the JSON leaves
+        # this job: the artifact is readable by anyone with repo read access,
+        # and conftest never needs the secret itself. scripts/iac/redact_plan.py
+        # masks resource_changes, resource_drift, planned_values,
+        # output_changes and configuration literals, and drops prior_state
+        # and variables (tested in scripts/iac/test_redact_plan.py).
+        run: |
+          terraform show -json tfplan > tfplan.raw.json
+          python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/redact_plan.py" tfplan.raw.json tfplan.json
+          rm -f tfplan.raw.json
+
+      - name: terraform show (human-readable, for PR comment)
+        run: terraform show -no-color tfplan > tfplan.txt
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          # No apply job exists in this workflow yet (standards/15 §5), so
+          # nothing downstream needs the binary plan and only the redacted
+          # JSON is uploaded.
+          path: ${{ inputs.working_directory }}/terraform/tfplan.json
+          retention-days: 1
+
+      # Same sticky-comment step as the AWS/GCP plan job
+      # (reusable-iac-checks.yml), so an on-prem reviewer reads the plan in
+      # the PR instead of downloading the artifact.
+      - name: Post plan as a sticky PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const workingDirectory = process.env.WORKING_DIRECTORY;
+            const planText = fs.readFileSync(
+              path.join(workingDirectory, 'terraform', 'tfplan.txt'),
+              'utf8'
+            ).slice(0, 65000);
+            const marker = `<!-- reusable-onprem-checks plan comment: ${workingDirectory} -->`;
+            const body = `${marker}\n### Terraform plan: \`${workingDirectory}\`\n<details><summary>Plan output (truncated)</summary>\n\n\`\`\`\n${planText}\n\`\`\`\n</details>`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  conftest-compose:
+    name: conftest (compose)
+    needs: [env-file-check, detect-layout]
+    # policy/conftest/onprem reads a resolved docker-compose config, not a
+    # Terraform plan (policy/conftest/onprem/compose.rego) -- a Proxmox VM
+    # repo with no docker-compose.yml has nothing for this job to check.
+    if: needs.detect-layout.outputs.has_compose == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout policy (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _policy
+          sparse-checkout: |
+            policy/conftest/
+            scripts/iac/install_conftest.sh
+          sparse-checkout-cone-mode: false
+
+      # install_conftest.sh checks the tarball against a pinned SHA-256 and
+      # adds its directory to GITHUB_PATH for the later conftest steps.
+      - name: Install conftest
+        run: bash _policy/scripts/iac/install_conftest.sh "$RUNNER_TEMP/conftest-bin"
+
+      - name: Resolve docker compose config
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          (cd "${WORKING_DIRECTORY}" && docker compose config --format json) \
+            > compose-resolved.json
+
+      # --all-namespaces is required: compose.rego lives in package `onprem`,
+      # not conftest's default `main` namespace, so a bare `conftest test`
+      # with neither flag silently evaluates zero policies and always exits
+      # 0. --data wires the calling repo's own exceptions.yml into
+      # `data.exceptions`, which the rego exception helper reads
+      # (policy/conftest/README.md).
+      # yamllint disable-line rule:line-length
+      - name: conftest test (container hardening, pinned tags, restart policy)
+        run: |
+          conftest test \
+            compose-resolved.json \
+            --policy _policy/policy/conftest/onprem \
+            --data exceptions.yml \
+            --all-namespaces
+
+  conftest-terraform:
+    name: conftest (terraform)
+    needs: [plan, detect-layout]
+    # Nothing to plan-check for a compose-only app repo.
+    if: needs.detect-layout.outputs.has_terraform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.plan.outputs.artifact_name }}
+          path: ${{ inputs.working_directory }}/terraform
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout policy (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _policy
+          sparse-checkout: |
+            policy/conftest/
+            scripts/iac/install_conftest.sh
+          sparse-checkout-cone-mode: false
+
+      # install_conftest.sh checks the tarball against a pinned SHA-256 and
+      # adds its directory to GITHUB_PATH for the later conftest steps.
+      - name: Install conftest
+        run: bash _policy/scripts/iac/install_conftest.sh "$RUNNER_TEMP/conftest-bin"
+
+      # policy/conftest/onprem checks a resolved compose config
+      # (conftest-compose above), not a Terraform plan's JSON shape: no
+      # onprem-targeted Terraform/bpg-proxmox policy is shipped yet
+      # (standards/15-onprem-platform.md, deferred). This step runs one
+      # the moment _policy/policy/conftest/onprem-terraform exists, and
+      # skips cleanly until then.
+      - name: conftest test (onprem terraform policy, if one is shipped)
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          if [ -d _policy/policy/conftest/onprem-terraform ]; then
+            conftest test \
+              "${WORKING_DIRECTORY}/terraform/tfplan.json" \
+              --policy _policy/policy/conftest/onprem-terraform \
+              --data exceptions.yml \
+              --all-namespaces
+          else
+            echo "No policy/conftest/onprem-terraform shipped yet — skipping (standards/15-onprem-platform.md, deferred)."
+          fi
+
+  exceptions-cross-check:
+    name: exceptions cross-check
+    needs: [env-file-check, detect-layout]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tooling_ref picks which commit of this repo's helpers runs with this
+      # job's token and secrets. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout policy (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _policy
+          sparse-checkout: |
+            schemas/iac/exceptions.schema.json
+            scripts/iac/check_exceptions.py
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # tools/iac/requirements.txt pins pyyaml, jsonschema and every transitive
+      # dependency by SHA-256 (standards/06-cicd-enforcement.md §4).
+      - name: Install helper deps (hash-locked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/onprem-helpers-venv"
+          "$RUNNER_TEMP/onprem-helpers-venv/bin/pip" install --quiet --require-hashes -r _policy/tools/iac/requirements.txt
+          echo "$RUNNER_TEMP/onprem-helpers-venv/bin" >> "$GITHUB_PATH"
+
+      # Schema-validates exceptions.yml, and requires the one entry every
+      # repo targeting Proxmox must carry (15-onprem-platform.md rule 20: the
+      # cluster.fw segmentation gap). A compose-only app repo has no
+      # terraform/ and so no required entry. Stale entries are conftest's
+      # exceptions_audit package.
+      - name: Exceptions cross-check (standards/08-iac.md 'Exceptions file')
+        env:
+          HAS_TERRAFORM: ${{ needs.detect-layout.outputs.has_terraform }}
+        run: |
+          require=()
+          if [ "$HAS_TERRAFORM" = "true" ]; then
+            require=(--require 15-onprem-platform.md#5-the-non-bypassable-layer-documented-exception-not-yet-enforced)
+          fi
+          python3 _policy/scripts/iac/check_exceptions.py \
+            --schema _policy/schemas/iac/exceptions.schema.json "${require[@]}" exceptions.yml
+
+  apply-needed-notice:
+    name: apply-needed-notice
+    # No separate apply job exists for on-prem (standards/08-iac.md 'The
+    # iac-checks contract' names this as a gap): a push that passes CI opens
+    # or updates one hand-off issue telling the IaC owner this
+    # working_directory is ready to apply by hand.
+    needs:
+      - packer-validate
+      - terraform-validate
+      - plan
+      - conftest-compose
+      - conftest-terraform
+      - exceptions-cross-check
+    # always() overrides the default implicit success() check, since several
+    # of the jobs above are conditionally skipped (self_hosted_runner,
+    # has_terraform, has_compose) rather than failed.
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      needs.packer-validate.result != 'failure' &&
+      needs.terraform-validate.result != 'failure' &&
+      needs.plan.result != 'failure' &&
+      needs.conftest-compose.result != 'failure' &&
+      needs.conftest-terraform.result != 'failure' &&
+      needs.exceptions-cross-check.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update an apply-needed issue, closing older ones for this directory
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        with:
+          script: |
+            const workingDirectory = process.env.WORKING_DIRECTORY;
+            const label = 'apply-needed';
+            const marker = `<!-- reusable-onprem-checks apply-needed: ${workingDirectory} -->`;
+            const title = `Apply needed: ${workingDirectory} at ${context.sha}`;
+
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (err) {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+                color: 'fbca04',
+                description: 'A merged on-prem change is ready for the IaC owner to apply by hand.',
+              });
+            }
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+            const olderForDir = openIssues.filter((i) => i.body && i.body.includes(marker));
+            for (const old of olderForDir) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: old.number,
+                body: `Superseded by a newer push to \`${workingDirectory}\` (${context.sha}).`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: old.number,
+                state: 'closed',
+              });
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: `${marker}\nA push to \`${workingDirectory}\` passed CI at ${context.sha}. Apply this on-prem change by hand when ready (standards/08-iac.md 'The iac-checks contract').`,
+              labels: [label],
+            });

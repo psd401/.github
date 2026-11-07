@@ -1,0 +1,22 @@
+{
+  "plan_stateful_no_exception": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_db_instance.prod",
+        "type": "aws_db_instance",
+        "change": {
+          "actions": [
+            "delete",
+            "create"
+          ],
+          "after": {
+            "publicly_accessible": false
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+	"exceptions": [
+		{
+			"id": "nat-dev-vpc",
+			"standard": "12-cloud-cost.md#nat-is-the-exception",
+			"rule": "more than one NAT gateway per VPC needs an acknowledged suppression",
+			"reason": "dev VPC spans two AZs with no shared NAT egress today",
+			"scope": "plan",
+			"approved_by": "network admin",
+			"status": "active",
+			"expires": "none"
+		},
+		{
+			"id": "stateful-dev-bucket",
+			"standard": "08-iac.md#stateful-resource-change",
+			"rule": "a plan that deletes or replaces a stateful resource needs explicit human approval",
+			"reason": "bucket is being recreated with a corrected name; contents are reproducible build output, not source data",
+			"scope": "aws_s3_bucket.artifacts",
+			"approved_by": "network admin",
+			"status": "active",
+			"expires": "2027-01-01"
+		},
+		{
+			"id": "stateful-expired",
+			"standard": "08-iac.md#stateful-resource-change",
+			"rule": "a plan that deletes or replaces a stateful resource needs explicit human approval",
+			"reason": "example of an expired entry that must no longer satisfy the check",
+			"scope": "aws_db_instance.expired_example",
+			"approved_by": "network admin",
+			"status": "active",
+			"expires": "2020-01-01"
+		},
+		{
+			"id": "arm64-legacy",
+			"standard": "12-cloud-cost.md#arm64-by-default",
+			"rule": "ARM64 by default for Lambda, Fargate and Amplify functions",
+			"reason": "vendor SDK ships only an x86_64 native binary",
+			"scope": "aws_lambda_function.legacy_x86",
+			"approved_by": "network admin",
+			"status": "active",
+			"expires": "none"
+		},
+		{
+			"id": "bedrockapp-region",
+			"standard": "08-iac.md#region-consistency",
+			"rule": "every environment of one app agrees on region",
+			"reason": "Bedrock-heavy app; us-east-1 in every environment per 08-iac.md district defaults",
+			"scope": "bedrockapp",
+			"approved_by": "network admin",
+			"status": "active",
+			"expires": "none",
+			"region": "us-east-1"
+		}
+	]
+}
