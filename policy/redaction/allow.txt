@@ -1,0 +1,47 @@
+# ABOUTME: Allowlist for redact-check.sh: literal or re: entries that suppress known-safe
+# ABOUTME: matches such as RFC 5737 documentation ranges.
+# policy/redaction/allow.txt — redact-check.sh allowlist (standards/08-iac.md 'Redaction check')
+#
+# One entry per line. A bare line suppresses a finding whose matched text contains
+# it as a literal substring. A line prefixed "re:" is an extended regex matched
+# against the matched text instead. Blank lines and lines starting with "#" are
+# ignored. Add an entry only for a documented placeholder or a genuinely public
+# value (a vendor's public API hostname, a published CIDR in a standards doc
+# explaining IANA reserved ranges, etc.) — never for a real district value.
+
+# RFC 5737 / RFC 3849 documentation ranges used in examples
+re:^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)
+re:^2001:db8:
+
+# version-number false positives on the ipv4 pattern (e.g. "1.16.5")
+re:^[0-9]+\.[0-9]+\.[0-9]+$
+
+# loopback and "any" addresses: never district-identifying
+127.0.0.1
+0.0.0.0/0
+0.0.0.0
+
+# GitHub's generic noreply address for the Claude Code commit identity,
+# named in 04-security.md as a public threat indicator (the CHAINDROP worm
+# impersonates it), not a PSD contact
+claude@users.noreply.github.com
+
+# The worked proxmox-vm example: 0 is the documented placeholder for
+# network.vlans.workload.id (resolved from the environment file at apply
+# time), not a real VLAN number
+vlan_id            = 0
+
+# schemas/environment-file.schema.json: schema description text documenting
+# the vlan.id and vlan.subnet fields, not a real VLAN ID or subnet
+VLAN ID (1
+VLAN, e.g. \"10
+10.0.0.0/24
+
+# policy/redaction/redact-check.sh: the vlan-number pattern's own regex
+# source self-matches when this script scans itself
+vlan[^0
+
+# policy/redaction/redact-check.sh: the ipv6 AWS-owned-ARN guard's own
+# regex source (it spells out "::aws:" literally) self-matches when this
+# script scans itself
+::a

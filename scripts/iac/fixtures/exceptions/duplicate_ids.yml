@@ -1,0 +1,19 @@
+# ABOUTME: check_exceptions.py test fixture: duplicate ids.
+# ABOUTME: Fake entries only.
+exceptions:
+  - id: same-id
+    standard: "08-iac.md#stateful-resource-change"
+    rule: Stateful resources are not replaced without an exception
+    reason: First entry
+    scope: aws_s3_bucket.artifacts
+    approved_by: network admin role
+    status: active
+    expires: none
+  - id: same-id
+    standard: "12-cloud-cost.md#nat-is-the-exception"
+    rule: More than one NAT gateway needs an exception
+    reason: Second entry reusing the first entry's id
+    scope: plan
+    approved_by: network admin role
+    status: active
+    expires: none

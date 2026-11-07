@@ -1,0 +1,21 @@
+{
+  "plan_rds_public": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_db_instance.oops",
+        "type": "aws_db_instance",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "publicly_accessible": true
+          }
+        }
+      }
+    ]
+  }
+}

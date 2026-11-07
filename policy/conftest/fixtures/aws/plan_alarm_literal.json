@@ -1,0 +1,23 @@
+{
+  "plan_alarm_literal": {
+    "configuration": {
+      "provider_config": {},
+      "root_module": {
+        "resources": [
+          {
+            "address": "aws_cloudwatch_metric_alarm.bad",
+            "type": "aws_cloudwatch_metric_alarm",
+            "expressions": {
+              "dimensions": {
+                "constant_value": {
+                  "ClusterId": "abc-123"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "resource_changes": []
+  }
+}

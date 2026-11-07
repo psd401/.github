@@ -1,0 +1,18 @@
+{
+  "plan_project_no_prevent": {
+    "resource_changes": [
+      {
+        "address": "google_project.app",
+        "type": "google_project",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "deletion_policy": "DEFAULT"
+          }
+        }
+      }
+    ]
+  }
+}

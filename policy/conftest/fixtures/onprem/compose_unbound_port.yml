@@ -1,0 +1,18 @@
+# ABOUTME: conftest verify fixture for the onprem package: compose unbound port.
+# ABOUTME: Fake services and images only.
+---
+# Hardened service whose published port names no host address, so Docker
+# binds it on every interface (15-onprem-platform.md §6 rule 22).
+compose_unbound_port:
+  services:
+    app:
+      image: ghcr.io/psd401/app:1.4.2
+      restart: unless-stopped
+      ports:
+        - "8080:8080"
+      cap_drop:
+        - ALL
+      security_opt:
+        - "no-new-privileges:true"
+      read_only: true
+      user: "10001:10001"

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PSD401/.github/main/schemas/iac/exceptions.schema.json",
+  "title": "PSD exceptions file",
+  "description": "Schema for exceptions.yml at the root of any repo governed by standards/08-iac.md 'Exceptions file'. The conftest job in reusable-iac-checks.yml and reusable-onprem-checks.yml reads this file: an active, unexpired entry turns a matching conftest failure into a pass; a stale or non-active entry still fails CI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["exceptions"],
+  "properties": {
+    "exceptions": {
+      "type": "array",
+      "description": "List of documented deviations from a standard. Empty array means no exceptions are claimed.",
+      "items": { "$ref": "#/$defs/exception" }
+    }
+  },
+  "$defs": {
+    "exception": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "standard",
+        "rule",
+        "reason",
+        "scope",
+        "approved_by",
+        "status",
+        "expires"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Short slug for this exception, referenced from code comments where the deviation lives.",
+          "examples": ["<exception-id>"]
+        },
+        "standard": {
+          "type": "string",
+          "description": "The standard and anchor this deviates from, e.g. \"08-iac.md#nat-is-the-exception\".",
+          "examples": ["<standard-doc>.md#<anchor>"]
+        },
+        "rule": {
+          "type": "string",
+          "description": "One-line restatement of the rule being deviated from.",
+          "examples": ["<rule-being-deviated-from>"]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the deviation is necessary here.",
+          "examples": ["<reason-for-deviation>"]
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "description": "Resource address or file path this exception covers: one token, no whitespace. Most rules also accept it as a prefix of the address they check, so an empty scope would cover every address and is rejected. The 08-iac.md#student-pii-in-logs rules accept only an exact address.",
+          "examples": ["<resource-address-or-file-path>"]
+        },
+        "approved_by": {
+          "type": "string",
+          "description": "Role title, e.g. \"network admin\". Never a person's name. Schema validation checks type, not whether the value is actually a role (08-iac.md 'Exceptions file', a named gap). No review approves an entry (03-code-review.md, CIO decision 2026-10-22): CODEOWNERS routes the change to reviewers and CI gates it.",
+          "examples": ["<approver-role-title>"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "pending-review", "superseded"],
+          "description": "Only \"active\" entries with a future (or \"none\") expires date pass CI. \"pending-review\" and \"superseded\" fail CI until renewed or removed.",
+          "examples": ["active"]
+        },
+        "expires": {
+          "type": "string",
+          "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2}|none)$",
+          "description": "Review date in YYYY-MM-DD, or the literal string \"none\" for a permanent exception. A past date fails CI until renewed or removed.",
+          "examples": ["<yyyy-mm-dd-or-none>"]
+        },
+        "region": {
+          "type": "string",
+          "description": "Optional. Only meaningful on an entry whose standard is \"08-iac.md#region-consistency\" and whose scope is a psd:application tag value: declares that app's canonical AWS region. A single `conftest test` run only sees one environment's plan, so a cross-environment region mismatch (dev in one region, prod in another) can't be checked by comparing two plans directly. exceptions.yml is committed once per repo and read by every environment's run, so each environment's plan is instead checked against this one shared declaration (standards/08-iac.md, named gap #24).",
+          "examples": ["<aws-region>"]
+        }
+      }
+    }
+  }
+}

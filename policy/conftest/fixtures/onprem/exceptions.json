@@ -1,0 +1,24 @@
+{
+	"exceptions": [
+		{
+			"id": "restart-policy-legacy-worker",
+			"standard": "15-onprem-platform.md#restart-policy",
+			"rule": "every long-running service sets restart: unless-stopped",
+			"reason": "legacy worker restarts itself via a supervisor process; conversion to unless-stopped is tracked separately",
+			"scope": "worker",
+			"approved_by": "network admin",
+			"status": "active",
+			"expires": "none"
+		},
+		{
+			"id": "restart-policy-expired",
+			"standard": "15-onprem-platform.md#restart-policy",
+			"rule": "every long-running service sets restart: unless-stopped",
+			"reason": "example of an expired entry that must no longer satisfy the check",
+			"scope": "stale-service",
+			"approved_by": "network admin",
+			"status": "active",
+			"expires": "2020-01-01"
+		}
+	]
+}

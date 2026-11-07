@@ -1,0 +1,48 @@
+# ABOUTME: Test fixture for resolve_env_file.py: fake values in a valid environment-file
+# ABOUTME: shape. No real district value belongs here.
+# Test fixture only: fake values in a valid environment-file shape.
+district_id: testdistrict
+network:
+  vlans:
+    management: {id: 10, subnet: 192.0.2.0/24, allowed_data_classifications: [internal]}
+    workload: {id: 20, subnet: 198.51.100.0/24, allowed_data_classifications: [internal, student-pii]}
+    storage: {id: 30, subnet: 203.0.113.0/24, allowed_data_classifications: [internal, student-pii]}
+  dns_zones:
+    internal: example.internal
+  ca:
+    internal_root: Example Internal Root CA
+  syslog_target: syslog.example.internal:514
+  ntp_servers: [ntp1.example.internal, ntp2.example.internal]
+timezone: America/Los_Angeles
+patch_window: Sun 02:00-04:00
+monitoring:
+  zabbix_server: zabbix.example.internal
+virtualization:
+  proxmox_api_endpoint: https://pve.example.internal:8006
+  cluster_name: pve-test
+  resource_pools:
+    vm-repo: pool-vm-repo
+  vmid_ranges:
+    templates: 9000-9099
+cloud:
+  aws:
+    state_bucket_prefix: example-tfstate
+    account_alias:
+      prod: prod-alias
+      nonprod: nonprod-alias
+      sandbox: sandbox-alias
+    region_default: us-west-2
+    region_ai: us-east-1
+    alerts_topic_name: example-alerts
+    bedrock_default_model_id: anthropic.claude-x
+  gcp:
+    state_backend: gcs
+    project_id:
+      prod: gcp-prod-project
+      nonprod: gcp-nonprod-project
+oidc:
+  deploy_role_prefix: example-deploy
+operations:
+  change_request_system: example-itsm
+contacts:
+  iac_owner_role: infrastructure engineer

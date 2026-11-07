@@ -1,0 +1,18 @@
+# ABOUTME: conftest verify fixture for the onprem package: compose wildcard port.
+# ABOUTME: Fake services and images only.
+---
+# Hardened service that binds its published port to 0.0.0.0 explicitly
+# (15-onprem-platform.md §6 rule 22: a specific address, never every interface).
+compose_wildcard_port:
+  services:
+    app:
+      image: ghcr.io/psd401/app:1.4.2
+      restart: unless-stopped
+      ports:
+        - "0.0.0.0:8080:8080"
+      cap_drop:
+        - ALL
+      security_opt:
+        - "no-new-privileges:true"
+      read_only: true
+      user: "10001:10001"

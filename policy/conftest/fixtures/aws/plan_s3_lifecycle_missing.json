@@ -1,0 +1,26 @@
+{
+  "plan_s3_lifecycle_missing": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_s3_bucket_versioning.artifacts",
+        "type": "aws_s3_bucket_versioning",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "bucket": "aws_s3_bucket.artifacts",
+            "versioning_configuration": [
+              {
+                "status": "Enabled"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
