@@ -159,7 +159,7 @@
           "properties": {
             "state_bucket_prefix": {
               "type": "string",
-              "description": "Root of the Terraform state-bucket naming pattern, e.g. \"psd-tfstate\" (full name is <prefix>-<account-alias>-<region>, 08-iac.md 'Platform: AWS (Terraform)').",
+              "description": "Root of the Terraform state-bucket naming pattern, e.g. \"example-tfstate\" (full name is <prefix>-<account-alias>-<region>, 08-iac.md 'Platform: AWS (Terraform)').",
               "examples": ["<state-bucket-prefix>"]
             },
             "account_alias": {
@@ -226,7 +226,7 @@
       "properties": {
         "deploy_role_prefix": {
           "type": "string",
-          "description": "Root of the OIDC deploy-role naming pattern, e.g. \"psd-deploy\" (full name is <prefix>-<repo>-<env>, 08-iac.md 'Deploy roles and OIDC').",
+          "description": "Root of the OIDC deploy-role naming pattern, e.g. \"example-deploy\" (full name is <prefix>-<repo>-<env>, 08-iac.md 'Deploy roles and OIDC').",
           "examples": ["<deploy-role-prefix>"]
         }
       }
