@@ -3,7 +3,7 @@
 package aws
 
 # Shared helper: is there an active, unexpired exceptions.yml entry that covers
-# a given rule and scope? Schema: standards/08-iac.md#7 (exceptions.schema.json).
+# a given rule and scope? Schema: schemas/iac/exceptions.schema.json (standards/08-iac.md#7).
 #
 # exceptions.yml is passed to conftest with --data <path>/exceptions.yml;
 # conftest merges that file's top-level keys straight into `data`, so its

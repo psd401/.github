@@ -5,7 +5,7 @@ package onprem
 # Shared helper: is there an active, unexpired exceptions.yml entry that covers
 # a given rule and scope? Mirrors policy/conftest/aws/exceptions.rego exactly
 # (same field names, same matching rules) so both packages read
-# `--data exceptions.yml` the same way. Schema: schemas/exceptions.schema.json,
+# `--data exceptions.yml` the same way. Schema: schemas/iac/exceptions.schema.json,
 # standards/08-iac.md 'Exceptions file' (reused here per 15-onprem-platform.md's "Builds on"
 # note).
 #

@@ -31,7 +31,7 @@ claude@users.noreply.github.com
 # time), not a real VLAN number
 vlan_id            = 0
 
-# schemas/environment-file.schema.json: schema description text documenting
+# schemas/iac/environment-file.schema.json: schema description text documenting
 # the vlan.id and vlan.subnet fields, not a real VLAN ID or subnet
 VLAN ID (1
 VLAN, e.g. \"10
