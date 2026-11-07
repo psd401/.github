@@ -74,7 +74,7 @@ pattern_names=(
 pattern_regexes=(
   '([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?'
   '\b([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\b'
-  '[^0-9]([0-9]{12})[^0-9]'
+  '(^|[^0-9A-Za-z])[0-9]{12}([^0-9A-Za-z]|$)'
   'arn:aws[a-zA-Z0-9-]*:[a-zA-Z0-9-]+:[a-zA-Z0-9-]*:[0-9]{12}:[a-zA-Z0-9/:_-]*'
   '(/hostedzone/Z|zone[ _]?id["'"'"'[:space:]]*[:=]?["'"'"'[:space:]]*Z)[0-9A-Z]{10,32}'
   'vlan[^0-9]{0,20}[0-9]{1,4}([^0-9-]|$)'
@@ -144,12 +144,13 @@ scan_line() {
     [[ -z "$matched_text" ]] && continue
     while IFS= read -r m; do
       [[ -z "$m" ]] && continue
-      # the account-id pattern brackets the 12 digits with non-digit guard
-      # characters so it doesn't also match inside a longer digit run; strip
-      # those guards back off before reporting/allowlisting.
+      # the account-id pattern brackets the 12 digits with non-alphanumeric
+      # guard characters (or a line edge) so it matches neither inside a
+      # longer digit run nor inside a hex hash; strip whichever guards were
+      # captured before reporting/allowlisting.
       if [[ "$name" == "aws-account-id" ]]; then
-        m="${m#?}"
-        m="${m%?}"
+        [[ "$m" == [0-9]* ]] || m="${m#?}"
+        [[ "$m" == *[0-9] ]] || m="${m%?}"
       fi
       # the vlan-number pattern brackets the digits with a trailing non-digit,
       # non-hyphen guard so it doesn't also match a number that's really part
@@ -254,8 +255,8 @@ scan_file() {
     while IFS=: read -r lineno m; do
       [[ -z "$m" ]] && continue
       if [[ "$name" == "aws-account-id" ]]; then
-        m="${m#?}"
-        m="${m%?}"
+        [[ "$m" == [0-9]* ]] || m="${m#?}"
+        [[ "$m" == *[0-9] ]] || m="${m%?}"
       fi
       # the vlan-number pattern brackets the digits with a trailing non-digit,
       # non-hyphen guard so it doesn't also match a number that's really part
