@@ -1,14 +1,13 @@
-# ABOUTME: Runs the scripts/iac/ pytest suite and conftest verify on PRs that change the IaC reusables or the files they load.
+# ABOUTME: Runs the scripts/iac/ pytest suite, conftest verify and the action-pin check on PRs that change workflows or the IaC files.
 # ABOUTME: Callers pin the IaC reusables to a release SHA, so changes must pass here before a release.
 name: IaC reusable tests
 
 on:
   pull_request:
     paths:
-      - .github/workflows/reusable-env-file-check.yml
-      - .github/workflows/reusable-iac-checks.yml
-      - .github/workflows/reusable-onprem-checks.yml
-      - .github/workflows/iac-tests.yml
+      # Every workflow and starter template: the action-pins job scans them all.
+      - .github/workflows/**
+      - workflow-templates/**
       - policy/**
       - schemas/iac/**
       - scripts/iac/**
@@ -52,3 +51,20 @@ jobs:
           for platform in aws gcp onprem; do
             conftest verify --policy "policy/conftest/$platform" --data "policy/conftest/fixtures/$platform"
           done
+
+  # Every SHA-pinned `uses:` in this repo's workflows and starter templates
+  # must exist at its SHA and must not declare a removed Node runtime.
+  # actionlint and zizmor read only the calling file, so a pin to a missing
+  # path (an infracost/actions/comment pin, 2026-10-22) passes both.
+  action-pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check pinned action targets
+        run: >-
+          python3 scripts/iac/check_action_pins.py
+          .github/workflows/*.yml
+          workflow-templates/*.yml

@@ -665,7 +665,7 @@ jobs:
 
       # infracost/actions has no comment/ action at any pinned release: its
       # README (v5.0.1) posts the comment with the CLI that setup installs.
-      # A pin to an action path that doesn't exist at that SHA fails the run.
+      # scripts/iac/check_action_pins.py fails CI on a pin to a missing path.
       - name: Post Infracost comment
         if: github.event_name == 'pull_request'
         env:
