@@ -1,0 +1,4 @@
+# ABOUTME: Test-only Python deps for scripts/iac/ tests, on top of requirements.in.
+# ABOUTME: Compile to requirements-test.txt with hashes; see the command in that file.
+-r requirements.in
+pytest

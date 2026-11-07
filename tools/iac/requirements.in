@@ -1,0 +1,4 @@
+# ABOUTME: Top-level Python deps for the IaC reusables (env-file schema validation).
+# ABOUTME: Compile to requirements.txt with hashes; see the command in that file.
+jsonschema
+pyyaml

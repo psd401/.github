@@ -45,6 +45,10 @@ reusable itself (`job.workflow_sha`), not from `main`:
   it only for testing).
 - `reusable-security-scan.yml` installs zizmor with `pip --require-hashes` and
   checks gitleaks against its release checksum.
+- `reusable-env-file-check.yml` reads `schemas/iac/` and installs
+  `tools/iac/requirements.txt` with `pip --require-hashes`. To bump those deps,
+  edit `tools/iac/requirements*.in` and rerun the `uv pip compile` command in
+  each `.txt` header with an `--exclude-newer` date 7+ days ago.
 
 ## Bumping a locked tool
 
