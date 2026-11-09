@@ -22,3 +22,11 @@ updates:
     ignore:
       - dependency-name: openwiki
       - dependency-name: "@anthropic-ai/claude-code"
+  # Hash-locked validator deps for reusable-env-file-check.yml and the IaC
+  # tests (uv pip compile --generate-hashes; regenerate per the file header).
+  - package-ecosystem: pip
+    directory: /tools/iac
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
