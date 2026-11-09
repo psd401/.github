@@ -215,10 +215,14 @@ dependency anything waits on); anything else needs an active, unexpired
 - An account-baseline root that never declares the account data protection
   policy passes the plan, because `account_controls.rego` fires only on a
   write to that policy.
-- `psd:root = account-baseline` is self-asserted. One tagged resource in an
-  app root does not make it the baseline root, because every resource
-  change with `tags_all` must carry the tag. A root that tags every resource
-  that way, through its `default_tags`, gets the baseline rules, which still
-  require every identifier and confine Unmask to the break-glass role.
+- `psd:root = account-baseline` is self-asserted. A plan that carries the
+  tag on some resources only is denied, and a resource whose `tags_all` is
+  not known at plan time counts as not carrying it. A student-pii root cannot
+  become the baseline root by tagging: a resource tagged
+  `psd:data-classification = student-pii` counts against the tag, so the
+  app-root rules still apply and the plan is denied. A root that is not
+  tagged student-pii and tags every resource, through its `default_tags`,
+  gets the baseline rules. Those only add checks: they still require every
+  identifier and confine Unmask to the break-glass role.
 - Account policy types other than data protection and subscription filter,
   such as TRANSFORMER_POLICY, are not checked.

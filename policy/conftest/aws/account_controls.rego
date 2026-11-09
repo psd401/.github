@@ -3,18 +3,24 @@
 package aws
 
 # The account-baseline root is the root whose default_tags set psd:root =
-# account-baseline (templates/account-baseline/providers.tf). It owns the
-# account-level controls. A student-pii app root is a student-pii root
-# (student_pii_logs.rego) that is not the baseline root.
+# account-baseline and psd:data-classification = internal
+# (templates/account-baseline/providers.tf). It owns the account-level
+# controls. A student-pii app root is a student-pii root (student_pii_logs.rego)
+# that is not the baseline root.
 #
 # default_tags put the tag on every resource that has tags_all, so the plan is
-# the baseline root only when at least one resource change carries it and
-# every resource change with a tags_all object carries it. One tagged
-# resource in an app root does not turn the app-root denies off. A resource
-# with no tags_all (aws_cloudwatch_log_account_policy, IAM role policies)
-# counts neither way. A change is judged by change.after, or by
-# change.before for a delete (after null), so deleting an untagged resource
-# still counts. A no-op change carries the current tags_all in after and
+# the baseline root only when at least one resource change carries it and no
+# resource change contradicts it. A change contradicts it when its tags_all is
+# known and lacks psd:root = account-baseline, when its tags_all is not known
+# at plan time, or when its tags_all sets psd:data-classification =
+# student-pii. One tagged resource in an app root does not turn the app-root
+# denies off, and neither does a student-pii root that tags every resource. A
+# plan that carries the tag and also has a contradicting change gets its own
+# deny, since it is otherwise neither root and no account rule would judge it.
+# A resource with no tags_all (aws_cloudwatch_log_account_policy, IAM role
+# policies) counts neither way. A change is judged by change.after, or by
+# change.before for a delete (after null), so deleting a resource without the
+# tag still counts. A no-op change carries the current tags_all in after and
 # counts like any other.
 #
 # data.student_pii_account is cloud.aws.student_pii from the environment file,
@@ -34,22 +40,59 @@ acct_root_tag_state(rc) := rc.change.before if {
 	is_object(rc.change.before)
 }
 
-acct_root_tagged := [state.tags_all |
+acct_root_tags(rc) := tags if {
+	tags := acct_root_tag_state(rc).tags_all
+	is_object(tags)
+}
+
+acct_root_tags_unknown(rc) if {
+	is_object(rc.change.after)
+	rc.change.after_unknown.tags_all == true
+}
+
+acct_root_claims := sort({rc.address |
 	some rc in input.resource_changes
-	state := acct_root_tag_state(rc)
-	is_object(state.tags_all)
-]
+	acct_root_tags(rc)["psd:root"] == "account-baseline"
+})
+
+# One reason per resource change that contradicts the claim.
+acct_root_conflict contains sprintf("%s does not carry it", [rc.address]) if {
+	some rc in input.resource_changes
+	tags := acct_root_tags(rc)
+	object.get(tags, "psd:root", null) != "account-baseline"
+}
+
+acct_root_conflict contains sprintf("%s has a tags_all not known at plan time", [rc.address]) if {
+	some rc in input.resource_changes
+	acct_root_tags_unknown(rc)
+}
+
+acct_root_conflict contains sprintf("%s is tagged psd:data-classification = student-pii", [rc.address]) if {
+	some rc in input.resource_changes
+	acct_root_tags(rc)["psd:data-classification"] == "student-pii"
+}
+
+acct_root_conflicts := sort(acct_root_conflict)
 
 acct_baseline_root if {
-	count(acct_root_tagged) > 0
-	every tags in acct_root_tagged {
-		tags["psd:root"] == "account-baseline"
-	}
+	count(acct_root_claims) > 0
+	count(acct_root_conflicts) == 0
 }
 
 acct_app_root if {
 	student_pii_root
 	not acct_baseline_root
+}
+
+# The first five items of a sorted list, and a count of the rest.
+acct_root_list(items, sep) := concat(sep, items) if count(items) <= 5
+
+acct_root_list(items, sep) := sprintf("%s and %d more", [concat(sep, array.slice(items, 0, 5)), count(items) - 5]) if count(items) > 5
+
+deny contains msg if {
+	count(acct_root_claims) > 0
+	count(acct_root_conflicts) > 0
+	msg := sprintf("psd:root = account-baseline: set on %s, but %s. The tag marks the account-baseline root (templates/account-baseline/), where every provider configuration sets it in default_tags and nothing is tagged student-pii. Set it on every provider configuration there, or remove it from this root (%s)", [acct_root_list(acct_root_claims, ", "), acct_root_list(acct_root_conflicts, "; "), posture_rule])
 }
 
 acct_cfg := data.student_pii_account

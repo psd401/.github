@@ -144,6 +144,15 @@ test_dest_bedrock_config_in_a_student_pii_app_root_denied_even_with_an_exception
 	startswith(msg, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root, the Bedrock invocation logging configuration belongs to the account-baseline root")
 }
 
+# One resource tagged psd:root = account-baseline does not make a student-pii
+# app root the baseline root, so it still may not own Bedrock logging.
+test_dest_bedrock_config_in_an_app_root_with_one_root_tagged_resource_denied if {
+	some bedrock in data.dest_plan_baseline.resource_changes
+	bedrock.type == "aws_bedrock_model_invocation_logging_configuration"
+	denies := dt_denies with input as acct_plan([pii_marker, acct_baseline_marker, bedrock])
+	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root, the Bedrock invocation logging configuration belongs to the account-baseline root")
+}
+
 test_dest_baseline_root_owns_bedrock_logging_but_not_its_s3_delivery if {
 	denies := dt_denies with input as data.dest_plan_baseline
 	not dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root")

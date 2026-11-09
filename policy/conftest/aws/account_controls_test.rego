@@ -151,10 +151,10 @@ test_baseline_root_may_hold_resources_without_tags if {
 	acct_baseline_root with input as acct_plan([acct_baseline_marker, acct_policy(["create"], null, full, {})])
 }
 
-# A no-op change shows the resource's current tags_all in after, so an
-# untagged resource the plan leaves alone still counts against the baseline
-# root.
-test_untagged_no_op_resource_counts_against_the_baseline_root if {
+# A no-op change shows the resource's current tags_all in after, so a
+# resource the plan leaves alone that is tagged but lacks psd:root still
+# counts against the baseline root.
+test_no_op_resource_without_the_root_tag_counts_against_the_baseline_root if {
 	noop := object.union(pii_marker, {"change": {"actions": ["no-op"], "before": {"tags_all": pii_tags}, "after": {"tags_all": pii_tags}}})
 	not acct_baseline_root with input as acct_plan([acct_baseline_marker, noop])
 }
@@ -171,4 +171,92 @@ test_delete_is_judged_by_before_tags_all if {
 		"change": {"actions": ["delete"], "before": acct_baseline_marker.change.after, "after": null},
 	}
 	acct_baseline_root with input as acct_plan([own])
+}
+
+# The root-tag deny's findings only. Its message starts with the tag, not an
+# address, because the plan as a whole is what it judges.
+acct_root_tag_findings(msgs) := {m | some m in msgs; startswith(m, "psd:root = account-baseline:")}
+
+acct_untagged(address, actions, before, after, after_unknown) := {
+	"address": address,
+	"type": "aws_s3_bucket",
+	"change": {"actions": actions, "before": before, "after": after, "after_unknown": after_unknown},
+}
+
+# A plan that carries the tag on some resources and not on others is neither
+# the baseline root nor, unless it is tagged student-pii, an app root. Without
+# its own deny no account rule would judge it at all.
+test_plan_with_the_root_tag_on_some_resources_only_is_denied if {
+	extra := acct_untagged("aws_s3_bucket.extra", ["create"], null, {"tags_all": internal_tags}, {})
+	not acct_baseline_root with input as acct_plan([acct_baseline_marker, extra])
+	findings := acct_root_tag_findings(deny) with input as acct_plan([acct_baseline_marker, extra])
+		with data.student_pii_account as data.acct_student_pii_account
+	count(findings) == 1
+	some m in findings
+	contains(m, "aws_iam_role.breakglass")
+	contains(m, "aws_s3_bucket.extra")
+	endswith(m, "(08-iac.md#student-pii-account-posture)")
+}
+
+test_plan_deleting_a_resource_without_the_root_tag_is_denied if {
+	gone := acct_untagged("aws_s3_bucket.old", ["delete"], {"tags_all": internal_tags}, null, {})
+	findings := acct_root_tag_findings(deny) with input as acct_plan([acct_baseline_marker, gone])
+		with data.student_pii_account as data.acct_student_pii_account
+	count(findings) == 1
+	some m in findings
+	contains(m, "aws_s3_bucket.old")
+}
+
+# terraform show -json leaves a wholly unknown tags_all out of after and sets
+# after_unknown.tags_all to true. Unknown counts as not carrying the tag.
+test_tags_all_unknown_at_plan_counts_against_the_baseline_root if {
+	unknown := acct_untagged("aws_s3_bucket.computed", ["create"], null, {}, {"tags_all": true})
+	not acct_baseline_root with input as acct_plan([acct_baseline_marker, unknown])
+	findings := acct_root_tag_findings(deny) with input as acct_plan([acct_baseline_marker, unknown])
+		with data.student_pii_account as data.acct_student_pii_account
+	count(findings) == 1
+	some m in findings
+	contains(m, "aws_s3_bucket.computed")
+	contains(m, "not known at plan time")
+}
+
+# The baseline root is tagged internal. A student-pii root that puts the root
+# tag on every resource, through default_tags or by hand, stays an app root:
+# the app-root denies still fire, and the root-tag deny names the conflict.
+test_student_pii_root_tagged_on_every_resource_stays_an_app_root if {
+	both := object.union(pii_marker, {"change": {"actions": ["create"], "after": {"tags_all": object.union(pii_tags, {"psd:root": "account-baseline"})}}})
+	policy := acct_policy(["create"], null, acct_dpp(acct_doc(acct_ids, acct_ids)), {})
+	not acct_baseline_root with input as acct_plan([both, policy])
+	acct_app_root with input as acct_plan([both, policy])
+	msgs := deny with input as acct_plan([both, policy])
+		with data.student_pii_account as data.acct_student_pii_account
+	owned := acct_findings(msgs)
+	count(owned) == 1
+	some o in owned
+	contains(o, "student-pii app root")
+	tagged := acct_root_tag_findings(msgs)
+	count(tagged) == 1
+	some t in tagged
+	contains(t, "aws_s3_bucket.data")
+	contains(t, "psd:data-classification = student-pii")
+}
+
+# The message names at most five conflicting resources and counts the rest.
+test_root_tag_deny_caps_the_resources_it_names if {
+	extras := [acct_untagged(sprintf("aws_s3_bucket.extra%d", [i]), ["create"], null, {"tags_all": internal_tags}, {}) | some i in numbers.range(1, 7)]
+	findings := acct_root_tag_findings(deny) with input as acct_plan(array.concat([acct_baseline_marker], extras))
+		with data.student_pii_account as data.acct_student_pii_account
+	count(findings) == 1
+	some m in findings
+	contains(m, "aws_s3_bucket.extra5")
+	not contains(m, "aws_s3_bucket.extra6")
+	contains(m, "and 2 more")
+}
+
+# A plan with no root tag anywhere, and the baseline fixture, get no root-tag deny.
+test_root_tag_deny_is_silent_without_a_conflict if {
+	count(acct_root_tag_findings(deny)) == 0 with input as acct_plan([pii_marker])
+	count(acct_root_tag_findings(deny)) == 0 with input as data.acct_plan_unrelated
+	count(acct_root_tag_findings(deny)) == 0 with input as data.acct_plan_baseline
+		with data.student_pii_account as data.acct_student_pii_account
 }
