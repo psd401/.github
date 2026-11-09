@@ -108,7 +108,7 @@ jobs:
 
       - name: Run Claude Code Review
         if: steps.scope.outputs.skip != 'true'
-        uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.251 (Claude Code 2.1.301; Sonnet 5.5 needs >= 2.1.280)
+        uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265 (Sonnet 5.5 needs Claude Code >= 2.1.280)
         env:
           AWS_REGION: us-west-2
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.BEDROCK_API_KEY }}
