@@ -276,6 +276,22 @@
                   }
                 }
               }
+            },
+            "ses": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["approved_from_addresses"],
+              "description": "SES sending controls (17-email-sending.md rules 3 and 9). approved_from_addresses, reduced by scripts/iac/resolve_env_file.py --ses-out, is the list the ses_send conftest rule compares each IAM ses:FromAddress pin against. Optional: a district with no app sending through SES omits it, and a plan that pins ses:FromAddress is then denied.",
+              "properties": {
+                "approved_from_addresses": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "pattern": "^[^\\s@*?]+@[^\\s@*?]+$" },
+                  "description": "From addresses an app may send as: app mail groups and their aliases. Compared case-insensitively. No * or ? wildcards, since the rule compares pins to entries as literals.",
+                  "examples": [["<app-mail-group>@<district-domain>"]]
+                }
+              }
             }
           }
         },
