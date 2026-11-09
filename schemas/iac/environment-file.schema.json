@@ -192,6 +192,90 @@
               "type": "string",
               "description": "Bedrock model ID an app uses when the task names none (08-iac.md, district defaults). Apps take it as a variable with no default.",
               "examples": ["<bedrock-default-model-id>"]
+            },
+            "student_pii": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["regions", "guardrail_mode", "breakglass_role_name", "breakglass_permission_set_name", "custom_identifiers"],
+              "description": "Account-level controls for AWS accounts that hold student-pii roots (08-iac.md#student-pii-account-posture), read by the account-baseline root and, reduced by scripts/iac/resolve_env_file.py --student-pii-out, by the account_controls and unmask conftest rules. Optional: a district with no student-pii workload on AWS omits it.",
+              "properties": {
+                "regions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string" },
+                  "description": "AWS regions that carry student-pii roots. The account baseline puts a data protection policy in each.",
+                  "examples": [["<aws-region>"]]
+                },
+                "guardrail_mode": {
+                  "type": "string",
+                  "enum": ["organization", "standalone"],
+                  "description": "\"organization\" when the district has an AWS Organization and attaches the baseline's SCPs; \"standalone\" for an account outside an Organization, where no SCP applies.",
+                  "examples": ["organization"]
+                },
+                "breakglass_role_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9+=,.@_-]{1,64}$",
+                  "description": "IAM role name of the break-glass role, the only principal allowed to unmask student-pii log data. The deploy-role boundary carves it out by this name.",
+                  "examples": ["<breakglass-role-name>"]
+                },
+                "breakglass_permission_set_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9+=,.@_-]{1,32}$",
+                  "description": "IAM Identity Center permission set whose role may assume the break-glass role. The trust matches its AWSReservedSSO_<name>_ role in this account. The identity source enforces MFA at sign-in, because federated sessions carry no aws:MultiFactorAuthPresent key.",
+                  "examples": ["<breakglass-permission-set-name>"]
+                },
+                "managed_identifiers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^arn:aws:dataprotection::aws:data-identifier/[A-Za-z0-9-]+$"
+                  },
+                  "default": [
+                    "arn:aws:dataprotection::aws:data-identifier/Name",
+                    "arn:aws:dataprotection::aws:data-identifier/EmailAddress",
+                    "arn:aws:dataprotection::aws:data-identifier/Address"
+                  ],
+                  "description": "AWS managed data identifier ARNs the account data protection policy audits and masks. Omit to use the default three."
+                },
+                "custom_identifiers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "description": "District-specific data identifiers, such as the student-number shape. CloudWatch Logs allows at most 10 per policy.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name", "regex", "test_matches", "test_non_matches"],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,128}$",
+                        "examples": ["<identifier-name>"]
+                      },
+                      "regex": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z0-9_#=@/;, ^$?\\[\\]{}|\\\\*+.-]+(?![\\s\\S])",
+                        "description": "Identifier regex, at most 200 characters from the CloudWatch Logs set: letters, digits, space and _ # = @ / ; , - ^ $ ? [ ] { } | \\ * + . (no parentheses, colons, quotes or newlines). The pattern ends in (?![\\s\\S]) rather than $ so a trailing newline from a YAML block scalar fails.",
+                        "examples": ["<identifier-regex>"]
+                      },
+                      "test_matches": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "type": "string" },
+                        "description": "Strings the regex must match. Use fabricated values, never a real student's."
+                      },
+                      "test_non_matches": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "type": "string" },
+                        "description": "Strings the regex must not match."
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         },
