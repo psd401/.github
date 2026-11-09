@@ -101,9 +101,7 @@ jobs:
     name: env-file-check
     # Fully qualified: a `./` path inside a reusable workflow resolves against
     # the caller's repository, where this file does not exist.
-    # TODO(release): replace <RELEASE-SHA> and vX.Y.Z with the commit and tag of
-    # the first release that ships reusable-env-file-check.yml (RELEASING.md).
-    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@<RELEASE-SHA> # vX.Y.Z
+    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@0ecfe7112d6d35e0d50b0a563933413aedcac1c3 # v1.4.0
     secrets:
       PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
 

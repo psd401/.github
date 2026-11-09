@@ -20,7 +20,6 @@ SELF_REPO = "${{ job.workflow_repository }}"
 SELF_REF = "${{ inputs.tooling_ref || job.workflow_sha }}"
 ENV_FILE_CHECK = "PSD401/.github/.github/workflows/reusable-env-file-check.yml@"
 ENV_FILE_CHECK_PIN = re.compile(re.escape(ENV_FILE_CHECK) + r"[0-9a-f]{40} # v\d+\.\d+\.\d+")
-RELEASE_PLACEHOLDER = ENV_FILE_CHECK + "<RELEASE-SHA> # vX.Y.Z"
 HELPER_PATH = re.compile(r"\b(_[\w-]+)/((?:policy|schemas|scripts|tools)/[\w./-]*)")
 ids = [w.name for w in WORKFLOWS]
 
@@ -111,26 +110,9 @@ def test_every_pip_install_requires_hashes_from_a_checked_out_lockfile(wf):
     assert installs, "expected hash-locked installs"
 
 
-def env_file_check_pin_is_a_placeholder(wf):
-    return RELEASE_PLACEHOLDER in wf.read_text()
-
-
-@pytest.mark.parametrize("wf", [
-    pytest.param(
-        wf,
-        id=wf.name,
-        marks=pytest.mark.xfail(
-            env_file_check_pin_is_a_placeholder(wf),
-            strict=True,
-            reason="filled at release; see RELEASING.md",
-        ),
-    )
-    for wf in WORKFLOWS
-])
+@pytest.mark.parametrize("wf", WORKFLOWS, ids=ids)
 def test_env_file_check_calls_this_repos_copy_at_a_release_pin(wf):
-    """The parsed `uses:` drops the `# vX.Y.Z` comment, so read the raw line.
-    While the placeholder stands this is an expected failure; once it is
-    replaced the marker turns off and a malformed pin fails here."""
+    """The parsed `uses:` drops the `# vX.Y.Z` comment, so read the raw line."""
     assert load(wf)["jobs"]["env-file-check"]["uses"].startswith(ENV_FILE_CHECK)
     lines = [ln.strip() for ln in wf.read_text().splitlines() if ln.strip().startswith(f"uses: {ENV_FILE_CHECK}")]
     assert len(lines) == 1, lines
