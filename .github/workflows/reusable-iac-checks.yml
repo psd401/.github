@@ -370,11 +370,12 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
 
-      # A caller repo can commit tfplan.json or student-pii-account.json in
-      # working_directory. The upload below would carry either one a later
-      # step did not overwrite, so both go before any step writes them.
+      # A caller repo can commit tfplan.json, student-pii-account.json or
+      # ses-from-addresses.json in working_directory. The upload below would
+      # carry any one a later step did not overwrite, so all go before any
+      # step writes them.
       - name: Remove committed copies of the derived files
-        run: rm -f tfplan.json student-pii-account.json
+        run: rm -f tfplan.json student-pii-account.json ses-from-addresses.json
 
       # The state bucket name and the district defaults live in the private
       # environment file (08-iac.md 'Private environment file'), never in the
@@ -385,7 +386,9 @@ jobs:
       # writes student-pii-account.json: cloud.aws.student_pii reduced to the
       # break-glass role name and the data identifiers that
       # policy/conftest/aws/account_controls.rego and unmask.rego compare
-      # against. Nothing prints a value.
+      # against, and ses-from-addresses.json: cloud.aws.ses's approved From
+      # addresses, which policy/conftest/aws/ses_send.rego checks each IAM
+      # ses:FromAddress pin against. Nothing prints a value.
       - name: Resolve private environment file (backend.hcl, TF_VAR_*)
         env:
           PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
@@ -405,7 +408,8 @@ jobs:
             --platform "$PLATFORM" --environment "$ENVIRONMENT" \
             --account-alias "$ACCOUNT_ALIAS" --repo "$REPO_NAME" \
             --region "$AWS_REGION" --backend-out backend.hcl \
-            --student-pii-out student-pii-account.json
+            --student-pii-out student-pii-account.json \
+            --ses-out ses-from-addresses.json
 
       - name: terraform init
         run: |
@@ -477,6 +481,7 @@ jobs:
             ${{ inputs.working_directory }}/tfplan.age
             ${{ inputs.working_directory }}/tfplan.json
             ${{ inputs.working_directory }}/student-pii-account.json
+            ${{ inputs.working_directory }}/ses-from-addresses.json
           # One day covers the merge-triggered apply in the same run.
           retention-days: 1
 
@@ -689,13 +694,19 @@ jobs:
         # before that deny can name the missing file. The destination rule
         # reads the vendor telemetry-layer list and denies a student-pii
         # Lambda with layers when it is missing
-        # (policy/conftest/aws/student_pii_destinations.rego).
+        # (policy/conftest/aws/student_pii_destinations.rego). The SES rule
+        # (policy/conftest/aws/ses_send.rego) reads ses-from-addresses.json
+        # the same way, and denies a statement that pins ses:FromAddress when
+        # it is missing.
         run: |
           plan_dir="$RUNNER_TEMP/plan"
           data=(--data exceptions.yml)
           if [ "$PLATFORM" = aws ]; then
             if [ -f "$plan_dir/student-pii-account.json" ]; then
               data+=(--data "$plan_dir/student-pii-account.json")
+            fi
+            if [ -f "$plan_dir/ses-from-addresses.json" ]; then
+              data+=(--data "$plan_dir/ses-from-addresses.json")
             fi
             data+=(--data _policy/policy/data/telemetry-layers.yml)
           fi
