@@ -408,3 +408,21 @@ test_ses_list_entry_compared_lowercase if {
 	listed := {"present": true, "approved_from_addresses": ["App-Alerts@<district-domain>"]}
 	count(deny) == 0 with input as pinned_plan with data.ses_from_addresses as listed
 }
+
+# End to end with scripts/iac/redact_plan.py: fixtures/aws/
+# plan_redacted_prior_state.json is the redactor's output for
+# scripts/iac/fixtures/plan_prior_state_raw.json (asserted by
+# test_prior_state_end_to_end_fixture_matches_redactor_output), so the
+# prior_state the CI artifact keeps is enough to deny an unchanged bad policy
+# and an unchanged managed-policy attachment.
+test_ses_redacted_plan_denies_unchanged_bad_policy if {
+	denies := ses_deny_on(data.plan_redacted_prior_state)
+	some star in denies
+	startswith(star, "aws_iam_role_policy.send: IAM statement \"Send\" allows SES send on Resource \"*\"")
+	some pin in denies
+	startswith(pin, "aws_iam_role_policy.send: IAM statement \"Send\" allows SES send with no ses:FromAddress condition")
+	some attach in denies
+	startswith(attach, "module.mail.aws_iam_role_policy_attachment.full: attaches arn:aws:iam::aws:policy/AmazonSESFullAccess")
+	count({m | some m in denies; contains(m, "aws_iam_role.app")}) == 0
+	count({m | some m in denies; contains(m, "secret_doc")}) == 0
+}

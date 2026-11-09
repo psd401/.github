@@ -78,7 +78,7 @@ def test_prior_state_variables_and_drift_values_do_not_leak(tmp_path):
                 "before": {"password": "old"}, "before_sensitive": {"password": True},
                 "after": {"password": "new"}, "after_sensitive": {"password": True}}}]}
     got = run(tmp_path, plan)
-    assert "prior_state" not in got
+    assert got["prior_state"] == {"values": {"root_module": {}}}
     assert "variables" not in got
     assert got["resource_drift"][0]["change"]["before"] == {"password": None}
     assert got["resource_drift"][0]["change"]["after"] == {"password": None}
@@ -212,3 +212,63 @@ def test_data_source_literals_are_masked(tmp_path):
     assert expr["token"]["constant_value"] is None
     assert expr["path"]["constant_value"] == "secret/db"
     assert S not in json.dumps(got)
+
+
+def test_prior_state_keeps_only_iam_resources_and_attributes(tmp_path):
+    """ses_send.rego reads unchanged IAM policies and attachments from
+    prior_state; everything else in it is dropped, and sensitive_values still
+    masks what is kept."""
+    S = "SENTINEL_hunter2"
+    policy = '{"Statement": []}'
+    plan = {"prior_state": {"format_version": "1.0", "values": {"root_module": {
+        "resources": [
+            {"address": "aws_iam_role.r", "mode": "managed", "type": "aws_iam_role", "name": "r",
+             "provider_name": "registry.terraform.io/hashicorp/aws",
+             "values": {"description": S, "tags": {"k": S}, "assume_role_policy": S,
+                        "inline_policy": [{"name": "i", "policy": policy, "extra": S}],
+                        "managed_policy_arns": ["arn:aws:iam::aws:policy/ReadOnlyAccess"]},
+             "sensitive_values": {}},
+            {"address": "aws_iam_policy.p", "mode": "managed", "type": "aws_iam_policy", "name": "p",
+             "values": {"policy": S, "description": "d"}, "sensitive_values": {"policy": True}},
+            {"address": "aws_s3_bucket.b", "mode": "managed", "type": "aws_s3_bucket", "name": "b",
+             "values": {"bucket": S}, "sensitive_values": {}},
+            {"address": "data.aws_iam_policy.d", "mode": "data", "type": "aws_iam_policy", "name": "d",
+             "values": {"policy": S}, "sensitive_values": {}}],
+        "child_modules": [
+            {"address": "module.m", "resources": [
+                {"address": "module.m.aws_iam_policy_attachment.a", "mode": "managed",
+                 "type": "aws_iam_policy_attachment", "name": "a",
+                 "values": {"policy_arn": "arn:aws:iam::aws:policy/AmazonSESFullAccess", "users": [S]},
+                 "sensitive_values": {}}]},
+            {"address": "module.empty", "resources": [
+                {"address": "module.empty.aws_db_instance.x", "mode": "managed",
+                 "type": "aws_db_instance", "name": "x", "values": {"password": S},
+                 "sensitive_values": {"password": True}}]}]}}}}
+    got = run(tmp_path, plan)
+    assert got["prior_state"] == {"values": {"root_module": {
+        "resources": [
+            {"address": "aws_iam_role.r", "mode": "managed", "type": "aws_iam_role", "name": "r",
+             "values": {"inline_policy": [{"name": "i", "policy": policy}],
+                        "managed_policy_arns": ["arn:aws:iam::aws:policy/ReadOnlyAccess"]}},
+            {"address": "aws_iam_policy.p", "mode": "managed", "type": "aws_iam_policy", "name": "p",
+             "values": {"policy": None}}],
+        "child_modules": [
+            {"address": "module.m", "resources": [
+                {"address": "module.m.aws_iam_policy_attachment.a", "mode": "managed",
+                 "type": "aws_iam_policy_attachment", "name": "a",
+                 "values": {"policy_arn": "arn:aws:iam::aws:policy/AmazonSESFullAccess"}}]}]}}}
+    assert S not in json.dumps(got)
+
+
+def test_prior_state_end_to_end_fixture_matches_redactor_output(tmp_path):
+    """End to end with policy/conftest/aws/ses_send_test.rego: the conftest
+    fixture plan_redacted_prior_state.json is exactly what this redactor
+    makes of scripts/iac/fixtures/plan_prior_state_raw.json, and
+    test_ses_redacted_plan_denies_unchanged_bad_policy denies on that
+    fixture. Regenerate the fixture from the raw plan if either changes."""
+    repo = Path(__file__).resolve().parents[2]
+    raw = json.loads((Path(__file__).parent / "fixtures" / "plan_prior_state_raw.json").read_text())
+    fixture = json.loads((repo / "policy/conftest/fixtures/aws/plan_redacted_prior_state.json").read_text())
+    got = run(tmp_path, raw)
+    assert got == fixture["plan_redacted_prior_state"]
+    assert "SENTINEL" not in json.dumps(got)

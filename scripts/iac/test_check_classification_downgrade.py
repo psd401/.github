@@ -105,12 +105,13 @@ def test_change_that_is_not_a_downgrade_passes(tmp_path, name):
 
 
 def test_tags_survive_redaction(tmp_path):
-    """The conftest job reads redact_plan.py output, which drops prior_state. The check
-    reads resource_changes[].change.before, so the redacted plan fails the same way."""
+    """The conftest job reads redact_plan.py output, which cuts prior_state to IAM policy
+    and attachment attributes, so no tags survive there. The check reads
+    resource_changes[].change.before, so the redacted plan fails the same way."""
     redacted = tmp_path / "tfplan.json"
     subprocess.run([sys.executable, str(REDACT), str(FIX / "plan_tag_dropped.json"), str(redacted)],
                    check=True)
-    assert "prior_state" not in json.loads(redacted.read_text())
+    assert json.loads(redacted.read_text())["prior_state"] == {"values": {"root_module": {}}}
     r = run(redacted, no_file(tmp_path))
     assert r.returncode == 1
     assert r.stderr.startswith("aws_s3_bucket.archive: ")

@@ -1,0 +1,194 @@
+{
+ "format_version": "1.2",
+ "terraform_version": "1.10.6",
+ "configuration": {
+  "provider_config": {},
+  "root_module": {}
+ },
+ "resource_changes": [
+  {
+   "address": "aws_iam_role_policy.send",
+   "mode": "managed",
+   "type": "aws_iam_role_policy",
+   "name": "send",
+   "change": {
+    "actions": [
+     "no-op"
+    ],
+    "before": {
+     "name": "send",
+     "role": "app",
+     "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Sid\": \"Send\", \"Effect\": \"Allow\", \"Action\": [\"ses:SendEmail\", \"ses:SendRawEmail\"], \"Resource\": \"*\"}]}"
+    },
+    "after": {
+     "name": "send",
+     "role": "app",
+     "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Sid\": \"Send\", \"Effect\": \"Allow\", \"Action\": [\"ses:SendEmail\", \"ses:SendRawEmail\"], \"Resource\": \"*\"}]}"
+    },
+    "after_unknown": {},
+    "before_sensitive": {},
+    "after_sensitive": {}
+   }
+  },
+  {
+   "address": "module.mail.aws_iam_role_policy_attachment.full",
+   "mode": "managed",
+   "type": "aws_iam_role_policy_attachment",
+   "name": "full",
+   "change": {
+    "actions": [
+     "no-op"
+    ],
+    "before": {
+     "role": "app",
+     "policy_arn": "arn:aws:iam::aws:policy/AmazonSESFullAccess"
+    },
+    "after": {
+     "role": "app",
+     "policy_arn": "arn:aws:iam::aws:policy/AmazonSESFullAccess"
+    },
+    "after_unknown": {},
+    "before_sensitive": {},
+    "after_sensitive": {}
+   },
+   "module_address": "module.mail"
+  }
+ ],
+ "prior_state": {
+  "format_version": "1.0",
+  "terraform_version": "1.10.6",
+  "values": {
+   "root_module": {
+    "resources": [
+     {
+      "address": "aws_iam_role_policy.send",
+      "mode": "managed",
+      "type": "aws_iam_role_policy",
+      "name": "send",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "schema_version": 0,
+      "values": {
+       "id": "app:send",
+       "name": "send",
+       "name_prefix": "",
+       "role": "app",
+       "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Sid\": \"Send\", \"Effect\": \"Allow\", \"Action\": [\"ses:SendEmail\", \"ses:SendRawEmail\"], \"Resource\": \"*\"}]}"
+      },
+      "sensitive_values": {}
+     },
+     {
+      "address": "aws_iam_role.app",
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "app",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "schema_version": 0,
+      "values": {
+       "name": "app",
+       "description": "SENTINEL",
+       "assume_role_policy": "{}",
+       "tags": {
+        "note": "SENTINEL"
+       },
+       "tags_all": {
+        "note": "SENTINEL"
+       },
+       "inline_policy": [
+        {
+         "name": "logs",
+         "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"logs:PutLogEvents\", \"Resource\": \"*\"}]}",
+         "extra": "SENTINEL"
+        }
+       ],
+       "managed_policy_arns": [
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      },
+      "sensitive_values": {
+       "inline_policy": [
+        {}
+       ],
+       "managed_policy_arns": [
+        false
+       ],
+       "tags": {},
+       "tags_all": {}
+      }
+     },
+     {
+      "address": "aws_iam_policy.secret_doc",
+      "mode": "managed",
+      "type": "aws_iam_policy",
+      "name": "secret_doc",
+      "values": {
+       "name": "secret_doc",
+       "policy": "SENTINEL"
+      },
+      "sensitive_values": {
+       "policy": true
+      }
+     },
+     {
+      "address": "aws_db_instance.db",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "db",
+      "values": {
+       "identifier": "db",
+       "password": "SENTINEL"
+      },
+      "sensitive_values": {
+       "password": true
+      }
+     },
+     {
+      "address": "data.aws_iam_policy.read",
+      "mode": "data",
+      "type": "aws_iam_policy",
+      "name": "read",
+      "values": {
+       "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Sid\": \"Send\", \"Effect\": \"Allow\", \"Action\": [\"ses:SendEmail\", \"ses:SendRawEmail\"], \"Resource\": \"*\"}]}"
+      },
+      "sensitive_values": {}
+     }
+    ],
+    "child_modules": [
+     {
+      "address": "module.mail",
+      "resources": [
+       {
+        "address": "module.mail.aws_iam_role_policy_attachment.full",
+        "mode": "managed",
+        "type": "aws_iam_role_policy_attachment",
+        "name": "full",
+        "values": {
+         "id": "app-x",
+         "role": "app",
+         "policy_arn": "arn:aws:iam::aws:policy/AmazonSESFullAccess"
+        },
+        "sensitive_values": {}
+       }
+      ]
+     },
+     {
+      "address": "module.db",
+      "resources": [
+       {
+        "address": "module.db.aws_secretsmanager_secret_version.v",
+        "mode": "managed",
+        "type": "aws_secretsmanager_secret_version",
+        "name": "v",
+        "values": {
+         "secret_string": "SENTINEL"
+        },
+        "sensitive_values": {
+         "secret_string": true
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

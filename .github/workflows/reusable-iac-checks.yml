@@ -439,8 +439,10 @@ jobs:
         # this job: the artifact is readable by anyone with repo read access,
         # and checkov, conftest and infracost never need the secret itself.
         # scripts/iac/redact_plan.py masks resource_changes, resource_drift,
-        # planned_values, output_changes and configuration literals, and drops
-        # prior_state and variables (tested in scripts/iac/test_redact_plan.py).
+        # planned_values, output_changes and configuration literals, drops
+        # variables, and cuts prior_state to the IAM policy and attachment
+        # attributes conftest's ses_send.rego reads for unchanged resources
+        # (tested in scripts/iac/test_redact_plan.py).
         # Infracost's FAQ (infracost.io/docs/faq, read 2026-10-14) states the
         # CLI sends only cost-related parameters to its pricing API, never the
         # plan JSON, so the redacted file is also what it reads.
