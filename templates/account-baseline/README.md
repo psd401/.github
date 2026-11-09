@@ -17,7 +17,8 @@ resource with `tags_all` carries it. The conftest rules in
 `policy/conftest/aws/` treat a plan as this root only when every such resource
 carries the tag, which tells this root from a student-pii app root, which may
 not touch these controls. Keep the tag in `default_tags`, not on single
-resources.
+resources. Tag nothing in this root `psd:data-classification = student-pii`:
+the rules treat a plan that does as an app root.
 
 ## Names
 
