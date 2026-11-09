@@ -253,6 +253,21 @@ def test_ses_out_without_cloud_aws_ses_is_present_false(tmp_path):
     assert run_ses(tmp_path, ENV)[1] == {"present": False, "approved_from_addresses": []}
 
 
+@pytest.mark.parametrize("ses_block, expected", [
+    ("{}", []),
+    ("{approved_from_addresses: app-alerts@<district-domain>}", []),
+    ("{approved_from_addresses: [7, app-alerts@<district-domain>, null]}", ["app-alerts@<district-domain>"]),
+])
+def test_ses_out_with_a_malformed_ses_block_keeps_only_string_entries(tmp_path, ses_block, expected):
+    """The resolver does not validate against the schema. An ses block with no
+    list, a value that is not a list, or entries that are not strings comes out
+    present with only the string entries, and ses_send.rego denies a pinned
+    statement when that list is empty."""
+    env = tmp_path / "env.yml"
+    env.write_text(f"cloud:\n  aws:\n    ses: {ses_block}\n")
+    assert run_ses(tmp_path, env)[1] == {"present": True, "approved_from_addresses": expected}
+
+
 def test_ses_out_never_prints_an_address(tmp_path):
     r, _ = run_ses(tmp_path)
     for addr in yaml.safe_load(PII_ENV.read_text())["cloud"]["aws"]["ses"]["approved_from_addresses"]:

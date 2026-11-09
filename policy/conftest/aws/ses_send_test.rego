@@ -409,6 +409,22 @@ test_ses_list_entry_compared_lowercase if {
 	count(deny) == 0 with input as pinned_plan with data.ses_from_addresses as listed
 }
 
+# A list that approves nothing denies a pinned statement the same way a
+# missing file does: empty, only wildcard entries, no string entries, a
+# `present` that is not the boolean true, or no list at all.
+test_ses_unusable_from_list_shapes_denied if {
+	every shape in [
+		{"present": true, "approved_from_addresses": []},
+		{"present": true, "approved_from_addresses": ["*@<district-domain>", "app-?@<district-domain>"]},
+		{"present": true, "approved_from_addresses": [7, null, {"a": "app-alerts@<district-domain>"}]},
+		{"present": "true", "approved_from_addresses": ["app-alerts@<district-domain>"]},
+		{"present": true},
+	] {
+		some msg in deny with input as pinned_plan with data.ses_from_addresses as shape
+		contains(msg, "data.ses_from_addresses is missing or empty")
+	}
+}
+
 # End to end with scripts/iac/redact_plan.py: fixtures/aws/
 # plan_redacted_prior_state.json is the redactor's output for
 # scripts/iac/fixtures/plan_prior_state_raw.json (asserted by
