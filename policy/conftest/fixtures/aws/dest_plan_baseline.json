@@ -13,7 +13,7 @@
             "bucket": "app-data",
             "tags_all": {
               "psd:root": "account-baseline",
-              "psd:data-classification": "student-pii"
+              "psd:data-classification": "internal"
             }
           },
           "after_unknown": {}

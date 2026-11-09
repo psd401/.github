@@ -5,8 +5,8 @@ package aws
 # Fixtures (policy/conftest/fixtures/aws/dest_*.json): dest_plan_pii holds one
 # resource per destination kind plus look-alikes that must pass, in a root
 # tagged student-pii. dest_plan_internal is the same resource list in an
-# internal root. dest_plan_baseline is an account-baseline root that also
-# carries the student-pii tag. dest_telemetry_layers stands in for
+# internal root. dest_plan_baseline is an account-baseline root, tagged
+# internal as the template tags it. dest_telemetry_layers stands in for
 # policy/data/telemetry-layers.yml, which conftest verify does not load.
 
 dt_rule := "08-iac.md#student-pii-log-destinations"
@@ -158,6 +158,18 @@ test_dest_baseline_root_owns_bedrock_logging_but_not_its_s3_delivery if {
 	not dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root")
 	some msg in denies
 	startswith(msg, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root, Bedrock invocation logging writes to S3 through cloudwatch_config.large_data_delivery_s3_config (destination kind bedrock-s3)")
+}
+
+# A student-pii root that puts the root tag on every resource stays an app
+# root, so it still may not own Bedrock logging.
+test_dest_bedrock_config_in_a_student_pii_root_tagged_on_every_resource_denied if {
+	plan := json.patch(data.dest_plan_baseline, [{
+		"op": "replace",
+		"path": "/resource_changes/0/change/after/tags_all/psd:data-classification",
+		"value": "student-pii",
+	}])
+	denies := dt_denies with input as plan
+	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root, the Bedrock invocation logging configuration belongs to the account-baseline root")
 }
 
 test_dest_internal_root_unaffected if {
