@@ -241,16 +241,50 @@ test_student_pii_root_tagged_on_every_resource_stays_an_app_root if {
 	contains(t, "psd:data-classification = student-pii")
 }
 
-# The message names at most five conflicting resources and counts the rest.
-test_root_tag_deny_caps_the_resources_it_names if {
-	extras := [acct_untagged(sprintf("aws_s3_bucket.extra%d", [i]), ["create"], null, {"tags_all": internal_tags}, {}) | some i in numbers.range(1, 7)]
-	findings := acct_root_tag_findings(deny) with input as acct_plan(array.concat([acct_baseline_marker], extras))
-		with data.student_pii_account as data.acct_student_pii_account
-	count(findings) == 1
-	some m in findings
-	contains(m, "aws_s3_bucket.extra5")
+# terraform show -json lists one unknown tag value as
+# after_unknown.tags_all.<key> = true and leaves the key out of after. An
+# unknown psd:root or psd:data-classification counts against the baseline
+# root, and the message says unknown, not missing.
+test_root_or_classification_tag_unknown_at_plan_counts_against_the_baseline_root if {
+	every key in ["psd:root", "psd:data-classification"] {
+		known := object.remove(acct_baseline_marker.change.after.tags_all, {key})
+		rc := acct_untagged("aws_s3_bucket.computed", ["create"], null, {"tags_all": known}, {"tags_all": {key: true}})
+		not acct_baseline_root with input as acct_plan([acct_baseline_marker, rc])
+		findings := acct_root_tag_findings(deny) with input as acct_plan([acct_baseline_marker, rc])
+			with data.student_pii_account as data.acct_student_pii_account
+		count(findings) == 1
+		some m in findings
+		contains(m, "aws_s3_bucket.computed has tags_all values not known at plan time")
+		not contains(m, "aws_s3_bucket.computed does not carry it")
+	}
+}
+
+# Any other tag may be unknown at plan time.
+test_other_tag_unknown_at_plan_does_not_count_against_the_baseline_root if {
+	rc := acct_untagged("aws_s3_bucket.named", ["create"], null, {"tags_all": acct_baseline_marker.change.after.tags_all}, {"tags_all": {"Name": true}})
+	acct_baseline_root with input as acct_plan([acct_baseline_marker, rc])
+}
+
+acct_cap_ok(m, 0) if not contains(m, " more")
+
+acct_cap_ok(m, more) if {
+	more > 0
+	contains(m, sprintf("and %d more", [more]))
 	not contains(m, "aws_s3_bucket.extra6")
-	contains(m, "and 2 more")
+}
+
+# The message names at most five conflicts and counts the rest: five are all
+# named, six and seven name five and count one and two more.
+test_root_tag_deny_caps_the_conflicts_it_names if {
+	every n, more in {5: 0, 6: 1, 7: 2} {
+		extras := [acct_untagged(sprintf("aws_s3_bucket.extra%d", [i]), ["create"], null, {"tags_all": internal_tags}, {}) | some i in numbers.range(1, n)]
+		findings := acct_root_tag_findings(deny) with input as acct_plan(array.concat([acct_baseline_marker], extras))
+			with data.student_pii_account as data.acct_student_pii_account
+		count(findings) == 1
+		some m in findings
+		contains(m, "aws_s3_bucket.extra5")
+		acct_cap_ok(m, more)
+	}
 }
 
 # A plan with no root tag anywhere, and the baseline fixture, get no root-tag deny.

@@ -216,8 +216,9 @@ dependency anything waits on); anything else needs an active, unexpired
   policy passes the plan, because `account_controls.rego` fires only on a
   write to that policy.
 - `psd:root = account-baseline` is self-asserted. A plan that carries the
-  tag on some resources only is denied, and a resource whose `tags_all` is
-  not known at plan time counts as not carrying it. A student-pii root cannot
+  tag on some resources only is denied, and a resource whose `tags_all`,
+  `psd:root` or `psd:data-classification` is not known at plan time counts
+  against the tag. A student-pii root cannot
   become the baseline root by tagging: a resource tagged
   `psd:data-classification = student-pii` counts against the tag, so the
   app-root rules still apply and the plan is denied. A root that is not

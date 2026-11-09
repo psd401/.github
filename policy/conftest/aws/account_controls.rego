@@ -11,13 +11,14 @@ package aws
 # default_tags put the tag on every resource that has tags_all, so the plan is
 # the baseline root only when at least one resource change carries it and no
 # resource change contradicts it. A change contradicts it when its tags_all is
-# known and lacks psd:root = account-baseline, when its tags_all is not known
-# at plan time, or when its tags_all sets psd:data-classification =
-# student-pii. One tagged resource in an app root does not turn the app-root
-# denies off, and neither does a student-pii root that tags every resource. A
-# plan that carries the tag and also has a contradicting change gets its own
-# deny, since it is otherwise neither root and no account rule would judge it.
-# A resource with no tags_all (aws_cloudwatch_log_account_policy, IAM role
+# known and lacks psd:root = account-baseline, when its tags_all sets
+# psd:data-classification = student-pii, or when its tags_all, or either of
+# those two tags in it, is not known at plan time. One tagged resource in an
+# app root does not turn the app-root denies off, and neither does a
+# student-pii root that tags every resource. A plan that carries the tag and
+# also has a contradicting change gets its own deny. Unless it is tagged
+# student-pii it is otherwise neither root, and no account rule would judge
+# it. A resource with no tags_all (aws_cloudwatch_log_account_policy, IAM role
 # policies) counts neither way. A change is judged by change.after, or by
 # change.before for a delete (after null), so deleting a resource without the
 # tag still counts. A no-op change carries the current tags_all in after and
@@ -45,9 +46,18 @@ acct_root_tags(rc) := tags if {
 	is_object(tags)
 }
 
+# terraform show -json marks a wholly unknown tags_all as after_unknown.tags_all
+# = true, and one unknown value as after_unknown.tags_all.<key> = true. Only
+# the two tags these rules read count.
 acct_root_tags_unknown(rc) if {
 	is_object(rc.change.after)
 	rc.change.after_unknown.tags_all == true
+}
+
+acct_root_tags_unknown(rc) if {
+	is_object(rc.change.after)
+	some key in ["psd:root", "psd:data-classification"]
+	rc.change.after_unknown.tags_all[key] == true
 }
 
 acct_root_claims := sort({rc.address |
@@ -60,9 +70,10 @@ acct_root_conflict contains sprintf("%s does not carry it", [rc.address]) if {
 	some rc in input.resource_changes
 	tags := acct_root_tags(rc)
 	object.get(tags, "psd:root", null) != "account-baseline"
+	not acct_root_tags_unknown(rc)
 }
 
-acct_root_conflict contains sprintf("%s has a tags_all not known at plan time", [rc.address]) if {
+acct_root_conflict contains sprintf("%s has tags_all values not known at plan time", [rc.address]) if {
 	some rc in input.resource_changes
 	acct_root_tags_unknown(rc)
 }
