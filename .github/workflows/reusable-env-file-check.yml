@@ -1,0 +1,114 @@
+---
+# Validates the calling repo's resolved private environment file
+# (<district-id>.env.yml) against schemas/iac/environment-file.schema.json
+# before any IaC job reads a resolved value from it.
+# See psd-dev-standards standards/08-iac.md 'Private environment file'.
+#
+# Never echoes PSD_ENV_FILE_CONTENTS or the decoded file: a failure reports
+# schema error paths only, never field values.
+#
+# The schema and the hash-locked validator deps come from this repo at the
+# commit the caller pinned (job.workflow_repository @ job.workflow_sha), not
+# from main. This repo is public, so the checkout needs no token.
+#
+# Every `uses:` below is pinned to a full commit SHA, with the version tag
+# that SHA resolves to in a trailing comment (psd-dev-standards standards/06
+# §4 Pinning). SHAs were resolved with `gh api
+# repos/OWNER/REPO/git/ref/tags/TAG`, 2026-11-06.
+name: Reusable env-file check
+
+"on":
+  workflow_call:
+    secrets:
+      PSD_ENV_FILE_CONTENTS:
+        description: >-
+          Base64-encoded <district-id>.env.yml contents. The district
+          keeps the file in a private repo and passes it in as a base64
+          repo/org secret; this workflow does not fetch it itself.
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate env file
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout schema and locked deps (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          # The files at the commit this reusable is pinned to, not main.
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            schemas/iac/environment-file.schema.json
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install validator deps (hash-locked)
+        # tools/iac/requirements.txt pins jsonschema, pyyaml and every
+        # transitive dependency with hashes, so pip refuses anything else
+        # (psd-dev-standards standards/06 §4). How to regenerate it is in the
+        # file's header.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/env-check-venv"
+          "$RUNNER_TEMP/env-check-venv/bin/pip" install --quiet --require-hashes -r tools/iac/requirements.txt
+          echo "$RUNNER_TEMP/env-check-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Write validator script
+        run: |
+          cat > /tmp/validate_env_file.py <<'PY'
+          import json
+          import sys
+
+          import yaml
+          from jsonschema import Draft202012Validator
+
+          env_path, schema_path = sys.argv[1], sys.argv[2]
+          with open(env_path, encoding="utf-8") as f:
+              try:
+                  data = yaml.safe_load(f)
+              except yaml.YAMLError as exc:
+                  # Never print the parser's message: it quotes the offending line.
+                  mark = getattr(exc, "problem_mark", None)
+                  where = f"line {mark.line + 1}" if mark else "unknown position"
+                  print(f"YAML parse error at {where}", file=sys.stderr)
+                  sys.exit(1)
+          with open(schema_path, encoding="utf-8") as f:
+              schema = json.load(f)
+
+          validator = Draft202012Validator(schema)
+          errors = sorted(validator.iter_errors(data), key=lambda e: list(e.absolute_path))
+          if errors:
+              for err in errors:
+                  loc = "/".join(str(p) for p in err.absolute_path) or "(root)"
+                  # Report the schema error location only — never the offending value.
+                  print(f"schema violation at {loc}: {err.validator} failed", file=sys.stderr)
+              sys.exit(1)
+          print("Environment file is valid against the schema.")
+          PY
+
+      - name: Decode and validate (never echoes contents)
+        env:
+          PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
+        run: |
+          set -eu
+          if [ -z "${PSD_ENV_FILE_CONTENTS:-}" ]; then
+            echo "PSD_ENV_FILE_CONTENTS is empty or unset — refusing to continue." >&2
+            exit 1
+          fi
+          umask 077
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          if ! printf '%s' "$PSD_ENV_FILE_CONTENTS" | base64 -d > "$tmpdir/env.yml"; then
+            echo "PSD_ENV_FILE_CONTENTS did not base64-decode." >&2
+            exit 1
+          fi
+          python3 /tmp/validate_env_file.py "$tmpdir/env.yml" schemas/iac/environment-file.schema.json
