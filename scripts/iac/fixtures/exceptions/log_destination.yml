@@ -1,0 +1,17 @@
+# A 08-iac.md#student-pii-log-destinations entry. The destination block names
+# the kind, target, operator, retention and encryption of the disclosure.
+exceptions:
+  - id: sis-sync-errors-subscription
+    standard: "08-iac.md#student-pii-log-destinations"
+    rule: Every log destination in a student-pii root is a disclosure to its operator
+    reason: Error events stream to a delivery stream in the same account
+    scope: aws_cloudwatch_log_subscription_filter.errors
+    approved_by: Chief Information Officer
+    destination:
+      kind: subscription-filter
+      target: arn:aws:firehose:us-west-2:111122223333:deliverystream/sis-sync-errors
+      operator: aws
+      retention_days: 30
+      kms: true
+    status: active
+    expires: "2027-06-30"

@@ -1,0 +1,5 @@
+# ABOUTME: check_exceptions.py test fixture: invalid schema.
+# ABOUTME: Fake entries only.
+exceptions:
+  - id: missing-fields
+    status: active

@@ -1,0 +1,8 @@
+# ABOUTME: conftest verify fixture for the onprem package: compose restart exception.
+# ABOUTME: Fake services and images only.
+---
+compose_restart_exception:
+  services:
+    worker:
+      image: ghcr.io/psd401/worker:1.4.2
+      restart: "on-failure"

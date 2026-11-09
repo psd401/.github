@@ -1,0 +1,24 @@
+{
+  "plan_arm64_missing": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_lambda_function.app",
+        "type": "aws_lambda_function",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "function_name": "app",
+            "architectures": [
+              "x86_64"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

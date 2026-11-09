@@ -1,0 +1,30 @@
+{
+  "plan_ok": {
+    "resource_changes": [
+      {
+        "address": "google_project.app",
+        "type": "google_project",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "deletion_policy": "PREVENT"
+          }
+        }
+      },
+      {
+        "address": "google_sql_database_instance.app",
+        "type": "google_sql_database_instance",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "deletion_protection": true
+          }
+        }
+      }
+    ]
+  }
+}

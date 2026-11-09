@@ -1,0 +1,31 @@
+{
+  "plan_region_consistency_mismatch": {
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "expressions": {
+            "region": {
+              "constant_value": "us-west-2"
+            },
+            "default_tags": [
+              {
+                "tags": {
+                  "constant_value": {
+                    "psd:application": "bedrockapp",
+                    "psd:environment": "dev",
+                    "psd:owner": "platform-team",
+                    "psd:managed-by": "terraform",
+                    "psd:repo": "bedrockapp-repo",
+                    "psd:data-classification": "internal"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "resource_changes": []
+  }
+}

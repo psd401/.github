@@ -1,0 +1,17 @@
+{
+  "plan_region_denied": {
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "expressions": {
+            "region": {
+              "constant_value": "eu-west-1"
+            }
+          }
+        }
+      }
+    },
+    "resource_changes": []
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "plan_tags_missing": {
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "expressions": {
+            "region": {
+              "constant_value": "us-west-2"
+            },
+            "default_tags": [
+              {
+                "tags": {
+                  "constant_value": {
+                    "psd:application": "x",
+                    "psd:environment": "dev"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "resource_changes": []
+  }
+}

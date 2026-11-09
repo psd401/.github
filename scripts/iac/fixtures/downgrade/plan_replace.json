@@ -1,0 +1,31 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.16.5",
+  "resource_changes": [
+    {
+      "address": "module.sync.aws_cloudwatch_log_group.errors",
+      "module_address": "module.sync",
+      "mode": "managed",
+      "type": "aws_cloudwatch_log_group",
+      "name": "errors",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": {
+          "name": "/sis-sync/errors",
+          "tags": {"psd:data-classification": "student-pii"},
+          "tags_all": {"psd:application": "sis-sync", "psd:data-classification": "student-pii"}
+        },
+        "after": {
+          "name": "/sis-sync/errors-v2",
+          "tags": null,
+          "tags_all": {"psd:application": "sis-sync"}
+        },
+        "after_unknown": {"arn": true, "id": true, "tags_all": {}},
+        "before_sensitive": {"tags": {}, "tags_all": {}},
+        "after_sensitive": {"tags_all": {}}
+      },
+      "action_reason": "replace_because_cannot_update"
+    }
+  ]
+}

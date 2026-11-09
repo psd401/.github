@@ -1,0 +1,19 @@
+{
+  "plan_iam_user": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_iam_user.bob",
+        "type": "aws_iam_user",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {}
+        }
+      }
+    ]
+  }
+}

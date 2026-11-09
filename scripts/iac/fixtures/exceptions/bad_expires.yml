@@ -1,0 +1,11 @@
+# ABOUTME: check_exceptions.py test fixture: bad expires.
+# ABOUTME: Fake entries only.
+exceptions:
+  - id: bad-expires
+    standard: "08-iac.md#stateful-resource-change"
+    rule: Stateful resources are not replaced without an exception
+    reason: The expires value is neither a date nor none
+    scope: aws_s3_bucket.artifacts
+    approved_by: network admin role
+    status: active
+    expires: next spring

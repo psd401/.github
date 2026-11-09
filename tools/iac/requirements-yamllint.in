@@ -1,0 +1,3 @@
+# ABOUTME: Top-level Python dep for the yamllint step of reusable-onprem-checks.yml.
+# ABOUTME: Compile to requirements-yamllint.txt with hashes; see the command in that file.
+yamllint

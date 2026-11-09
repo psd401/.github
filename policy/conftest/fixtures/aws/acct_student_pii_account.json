@@ -1,0 +1,15 @@
+{
+  "acct_student_pii_account": {
+    "present": true,
+    "breakglass_role_name": "district-breakglass-unmask",
+    "breakglass_permission_set_name": "StudentPiiBreakGlass",
+    "managed_identifiers": [
+      "arn:aws:dataprotection::aws:data-identifier/Name",
+      "arn:aws:dataprotection::aws:data-identifier/EmailAddress",
+      "arn:aws:dataprotection::aws:data-identifier/Address"
+    ],
+    "custom_identifier_names": [
+      "StudentId"
+    ]
+  }
+}

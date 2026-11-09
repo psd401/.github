@@ -1,0 +1,12 @@
+.terraform/
+*.tfplan
+terraform.tfvars
+
+# Structural backstop beyond the redaction check (08-iac.md v0.3 §8):
+# a real environment file can't be committed even by accident.
+*.env.yml
+!*.example.yml
+
+# Generated per run by scripts/iac/resolve_env_file.py from the private
+# environment file (bucket, key, region). Never committed.
+backend.hcl

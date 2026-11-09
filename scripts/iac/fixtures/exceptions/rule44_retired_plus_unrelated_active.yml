@@ -1,0 +1,21 @@
+# ABOUTME: check_exceptions.py test fixture: rule44 retired plus unrelated active.
+# ABOUTME: Fake entries only.
+# The shape claude-review flagged: a retired rule-44 entry plus an unrelated
+# active entry. Two whole-file greps pass this; an entry-scoped check must not.
+exceptions:
+  - id: direct-install
+    standard: "15-onprem-platform.md#11-app-runtime-bones"
+    rule: An app runs as containers under compose
+    reason: Was a direct install; containerised since
+    scope: infra/systemd/app.service
+    approved_by: network admin role
+    status: superseded
+    expires: none
+  - id: self-terminated-tls
+    standard: "15-onprem-platform.md#7-dns-and-certificates"
+    rule: The shared proxy tier terminates TLS
+    reason: Identity backbone box terminates its own TLS
+    scope: docker-compose.yml#services.proxy
+    approved_by: network admin role
+    status: active
+    expires: none

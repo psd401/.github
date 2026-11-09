@@ -1,0 +1,116 @@
+# ABOUTME: Vendor Lambda layers that send function telemetry outside the root, matched by student_pii_destinations.rego
+# ABOUTME: (destination kind lambda-telemetry, 08-iac.md#student-pii-log-destinations), one dated row per vendor.
+#
+# conftest reads this file with --data, as data.telemetry_layers. Each row:
+#   vendor       the name a deny message shows
+#   match        anchored regex on the full layer ARN (OPA regex.match, RE2 syntax)
+#   example      a layer ARN from the source, with region, architecture and
+#                version filled in where the source gives a template
+#   operator     who receives the telemetry with the layer's default settings
+#   verified_on  quoted date the source was last read, or 'UNVERIFIED'
+#   source       the page that lists the account or layer names
+#
+# scripts/iac/test_telemetry_layers.py checks every row and warns when
+# verified_on is UNVERIFIED or more than 180 days old.
+#
+# Not listed: CloudWatch Lambda Insights (LambdaInsightsExtension), which
+# writes metrics to the account's own CloudWatch. OpenTelemetry exporter
+# environment variables (OTEL_EXPORTER_*) are destination kind otel-exporter,
+# checked in the rego whatever layer is attached.
+
+telemetry_layers:
+  - vendor: Datadog
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:(464622532012|002406178527):layer:'
+    example: 'arn:aws:lambda:us-west-2:464622532012:layer:Datadog-Extension:99'
+    operator: Datadog
+    verified_on: '2026-10-23'
+    source: 'https://docs.datadoghq.com/serverless/aws_lambda/installation/python/'
+
+  - vendor: New Relic
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:451483290750:layer:'
+    example: 'arn:aws:lambda:us-east-1:451483290750:layer:NewRelicNodeJS22X:38'
+    operator: New Relic
+    verified_on: '2026-10-23'
+    source: 'https://docs.newrelic.com/docs/serverless-function-monitoring/aws-lambda-monitoring/instrument-lambda-function/instrument-your-own/'
+
+  - vendor: AWS Distro for OpenTelemetry
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:901920570463:layer:'
+    example: 'arn:aws:lambda:us-west-2:901920570463:layer:aws-otel-python-amd64-ver-1-32-0:7'
+    operator: operator of the configured OTLP endpoint
+    verified_on: '2026-10-23'
+    source: 'https://aws-otel.github.io/docs/getting-started/lambda/lambda-python'
+
+  # Published from a different account in some Regions, so this row matches
+  # the layer name.
+  - vendor: AWS Lambda Layer for OpenTelemetry
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:[0-9]{12}:layer:AWSOpenTelemetryDistro'
+    example: 'arn:aws:lambda:us-west-2:615299751070:layer:AWSOpenTelemetryDistroPython:36'
+    operator: AWS (CloudWatch Application Signals), or the operator of the configured OTLP endpoint
+    verified_on: '2026-10-23'
+    source: 'https://aws-otel.github.io/docs/getting-started/lambda'
+
+  - vendor: OpenTelemetry Lambda
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:184161586896:layer:'
+    example: 'arn:aws:lambda:us-west-2:184161586896:layer:opentelemetry-python-0_22_0:1'
+    operator: operator of the configured OTLP endpoint
+    verified_on: '2026-10-23'
+    source: 'https://github.com/open-telemetry/opentelemetry-lambda/releases/tag/layer-python/0.22.0'
+
+  - vendor: Sentry
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:943013980633:layer:'
+    example: 'arn:aws:lambda:us-west-2:943013980633:layer:SentryNodeServerlessSDKv11:10'
+    operator: Sentry
+    verified_on: '2026-10-23'
+    source: 'https://docs.sentry.io/platforms/javascript/guides/aws-lambda/install/layer/'
+
+  - vendor: Lumigo
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:114300393969:layer:'
+    example: 'arn:aws:lambda:us-west-2:114300393969:layer:lumigo-node-tracer:316'
+    operator: Lumigo
+    verified_on: '2026-10-23'
+    source: 'https://github.com/lumigo-io/lumigo-node/blob/master/layers/LAYERS24x.md'
+
+  # The source names 585768157899 as the account that stores the layer. The
+  # example ARN, from an older account, is the one in
+  # https://docs.dynatrace.com/docs/ingest-from/amazon-web-services/integrate-into-aws/aws-lambda-integration/deploy-oa-latest-lambda-container-images
+  - vendor: Dynatrace
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:(585768157899|725887861453):layer:'
+    example: 'arn:aws:lambda:us-east-1:725887861453:layer:Dynatrace_OneAgent_1_207_6_20201127-103507_nodejs:1'
+    operator: Dynatrace
+    verified_on: '2026-10-23'
+    source: 'https://docs.dynatrace.com/docs/ingest-from/amazon-web-services/integrate-into-aws/aws-lambda-integration/trace-lambda-functions'
+
+  - vendor: Honeycomb
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:702835727665:layer:'
+    example: 'arn:aws:lambda:us-west-2:702835727665:layer:honeycomb-lambda-extension-x86_64-v11-0-0:1'
+    operator: Honeycomb
+    verified_on: '2026-10-23'
+    source: 'https://github.com/honeycombio/honeycomb-lambda-extension/blob/main/README.md'
+
+  - vendor: Elastic
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:267093732750:layer:'
+    example: 'arn:aws:lambda:us-west-2:267093732750:layer:elastic-apm-extension-ver-1-7-2-x86_64:1'
+    operator: Elastic, or the operator of the configured APM Server
+    verified_on: '2026-10-23'
+    source: 'https://github.com/elastic/apm-aws-lambda/releases/tag/v1.7.2'
+
+  - vendor: Splunk
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:254067382080:layer:'
+    example: 'arn:aws:lambda:us-west-2:254067382080:layer:splunk-apm:142'
+    operator: Splunk
+    verified_on: '2026-10-23'
+    source: 'https://github.com/signalfx/lambda-layer-versions/blob/main/splunk-apm/splunk-apm.md'
+
+  - vendor: Coralogix
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:625240141681:layer:'
+    example: 'arn:aws:lambda:us-west-2:625240141681:layer:coralogix-python-wrapper-and-exporter-x86_64:35'
+    operator: Coralogix
+    verified_on: '2026-10-23'
+    source: 'https://coralogix.com/docs/opentelemetry/instrumentation-options/opentelemetry-lambda-auto-instrumentation/'
+
+  - vendor: IBM Instana
+    match: '^arn:aws[a-z-]*:lambda:[a-z0-9-]+:(410797082306|107998019096):layer:'
+    example: 'arn:aws:lambda:us-west-2:410797082306:layer:instana-nodejs:308'
+    operator: IBM Instana
+    verified_on: '2026-10-23'
+    source: 'https://www.ibm.com/docs/en/instana-observability/current?topic=lambda-aws-native-tracing-nodejs'

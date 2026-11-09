@@ -1,0 +1,11 @@
+# A 08-iac.md#student-pii-in-logs entry with one exact resource address as
+# its scope.
+exceptions:
+  - id: sis-sync-error-log-retention
+    standard: "08-iac.md#student-pii-in-logs"
+    rule: Student-pii log groups cap retention at 30 days
+    reason: The sync error log keeps 90 days to cover the state reporting window
+    scope: module.sync.aws_cloudwatch_log_group.errors
+    approved_by: Chief Information Officer
+    status: active
+    expires: "2027-06-30"

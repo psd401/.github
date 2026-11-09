@@ -1,0 +1,21 @@
+{
+  "plan_log_retention_missing": {
+    "configuration": {
+      "provider_config": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_cloudwatch_log_group.app",
+        "type": "aws_cloudwatch_log_group",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "name": "/aws/lambda/app"
+          }
+        }
+      }
+    ]
+  }
+}

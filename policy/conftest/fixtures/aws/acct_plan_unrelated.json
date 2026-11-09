@@ -1,0 +1,163 @@
+{
+  "acct_plan_unrelated": {
+    "format_version": "1.2",
+    "terraform_version": "1.16.5",
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "full_name": "registry.terraform.io/hashicorp/aws",
+          "expressions": {
+            "default_tags": [
+              {
+                "tags": {
+                  "constant_value": {
+                    "psd:application": "reportapp",
+                    "psd:data-classification": "internal",
+                    "psd:environment": "dev",
+                    "psd:managed-by": "terraform",
+                    "psd:owner": "platform-team",
+                    "psd:repo": "reportapp"
+                  }
+                }
+              }
+            ],
+            "region": {
+              "constant_value": "us-west-2"
+            }
+          }
+        }
+      }
+    },
+    "resource_changes": [
+      {
+        "address": "aws_bedrock_model_invocation_logging_configuration.this",
+        "mode": "managed",
+        "type": "aws_bedrock_model_invocation_logging_configuration",
+        "name": "this",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "logging_config": [
+              {
+                "cloudwatch_config": [
+                  {
+                    "large_data_delivery_s3_config": [],
+                    "log_group_name": "/reportapp/bedrock",
+                    "role_arn": "arn:aws:iam::111111111111:role/bedrock-invocation-logging"
+                  }
+                ],
+                "embedding_data_delivery_enabled": true,
+                "image_data_delivery_enabled": true,
+                "s3_config": [],
+                "text_data_delivery_enabled": true,
+                "video_data_delivery_enabled": true
+              }
+            ],
+            "region": "us-west-2"
+          },
+          "after_unknown": {
+            "id": true,
+            "logging_config": [
+              {
+                "cloudwatch_config": [
+                  {
+                    "large_data_delivery_s3_config": []
+                  }
+                ],
+                "s3_config": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_account_policy.masking",
+        "mode": "managed",
+        "type": "aws_cloudwatch_log_account_policy",
+        "name": "masking",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "policy_document": "{\"Name\":\"names-only\",\"Statement\":[{\"DataIdentifier\":[\"arn:aws:dataprotection::aws:data-identifier/Name\"],\"Operation\":{\"Audit\":{\"FindingsDestination\":{}}},\"Sid\":\"audit\"},{\"DataIdentifier\":[\"arn:aws:dataprotection::aws:data-identifier/Name\"],\"Operation\":{\"Deidentify\":{\"MaskConfig\":{}}},\"Sid\":\"redact\"}],\"Version\":\"2021-06-01\"}",
+            "policy_name": "names-only",
+            "policy_type": "DATA_PROTECTION_POLICY",
+            "region": "us-west-2",
+            "scope": "ALL",
+            "selection_criteria": null
+          },
+          "after_unknown": {
+            "id": true
+          }
+        }
+      },
+      {
+        "address": "aws_iam_role.app",
+        "mode": "managed",
+        "type": "aws_iam_role",
+        "name": "app",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+            "description": null,
+            "force_detach_policies": false,
+            "max_session_duration": 3600,
+            "name": "reportapp-runtime",
+            "path": "/",
+            "permissions_boundary": null,
+            "tags": null,
+            "tags_all": {
+              "psd:application": "reportapp",
+              "psd:data-classification": "internal",
+              "psd:environment": "dev",
+              "psd:managed-by": "terraform",
+              "psd:owner": "platform-team",
+              "psd:repo": "reportapp"
+            }
+          },
+          "after_unknown": {
+            "arn": true,
+            "create_date": true,
+            "id": true,
+            "inline_policy": true,
+            "managed_policy_arns": true,
+            "name_prefix": true,
+            "tags_all": {},
+            "unique_id": true
+          }
+        }
+      },
+      {
+        "address": "aws_iam_role_policy.app_logs",
+        "mode": "managed",
+        "type": "aws_iam_role_policy",
+        "name": "app_logs",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "name": "logs",
+            "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"logs:*\",\"Effect\":\"Allow\",\"Resource\":\"*\"}]}",
+            "role": "reportapp-runtime"
+          },
+          "after_unknown": {
+            "id": true,
+            "name_prefix": true
+          }
+        }
+      }
+    ]
+  }
+}
