@@ -215,7 +215,7 @@
                 "breakglass_role_name": {
                   "type": "string",
                   "pattern": "^[A-Za-z0-9+=,.@_-]{1,64}$",
-                  "description": "IAM role name of the break-glass role, the only principal allowed to unmask student-pii log data. The deploy-role boundary carves it out by this name.",
+                  "description": "IAM role name of the break-glass role, the only principal allowed to unmask student-pii log data. The account-baseline apply-role boundary and the SCP name it. The app deploy-role boundary has no carve-out for it.",
                   "examples": ["<breakglass-role-name>"]
                 },
                 "breakglass_permission_set_name": {
