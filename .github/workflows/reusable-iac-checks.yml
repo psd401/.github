@@ -603,7 +603,7 @@ jobs:
           path: ${{ inputs.working_directory }}
 
       - name: Checkov (plan JSON)
-        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12.3134.0
         with:
           file: ${{ inputs.working_directory }}/tfplan.json
           framework: terraform_plan
