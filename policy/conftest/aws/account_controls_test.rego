@@ -130,3 +130,45 @@ test_unrelated_root_unaffected if {
 	count(deny) == 0 with input as data.acct_plan_unrelated
 		with data.student_pii_account as data.acct_student_pii_account
 }
+
+# One resource tagged psd:root = account-baseline does not make a plan the
+# baseline root: every resource that carries tags must carry it. Otherwise a
+# student-pii app root turns the app-root denies off with a single tag.
+test_one_tagged_resource_does_not_make_an_app_root_the_baseline_root if {
+	not acct_baseline_root with input as acct_plan([pii_marker, acct_baseline_marker])
+	full := acct_dpp(acct_doc(acct_ids, acct_ids))
+	findings := acct_findings(deny) with input as acct_plan([pii_marker, acct_baseline_marker, acct_policy(["create"], null, full, {})])
+		with data.student_pii_account as data.acct_student_pii_account
+	count(findings) == 1
+	some m in findings
+	contains(m, "student-pii app root")
+}
+
+# A resource with no tags_all (the account policy has none) does not count
+# against the baseline root.
+test_baseline_root_may_hold_resources_without_tags if {
+	full := acct_dpp(acct_doc(acct_ids, acct_ids))
+	acct_baseline_root with input as acct_plan([acct_baseline_marker, acct_policy(["create"], null, full, {})])
+}
+
+# A no-op change shows the resource's current tags_all in after, so an
+# untagged resource the plan leaves alone still counts against the baseline
+# root.
+test_untagged_no_op_resource_counts_against_the_baseline_root if {
+	noop := object.union(pii_marker, {"change": {"actions": ["no-op"], "before": {"tags_all": pii_tags}, "after": {"tags_all": pii_tags}}})
+	not acct_baseline_root with input as acct_plan([acct_baseline_marker, noop])
+}
+
+# A delete has no after, so it is judged by before: deleting an untagged
+# resource does not hide it from the check, and the baseline root destroying
+# its own tagged resource stays the baseline root.
+test_delete_is_judged_by_before_tags_all if {
+	gone := object.union(pii_marker, {"change": {"actions": ["delete"], "before": {"tags_all": pii_tags}, "after": null}})
+	not acct_baseline_root with input as acct_plan([acct_baseline_marker, gone])
+	own := {
+		"address": "aws_iam_role.breakglass",
+		"type": "aws_iam_role",
+		"change": {"actions": ["delete"], "before": acct_baseline_marker.change.after, "after": null},
+	}
+	acct_baseline_root with input as acct_plan([own])
+}

@@ -153,7 +153,7 @@ which share the fixture file with its deliberately expired entry, stay green.
 | aws | `rds_public.rego` | no `publicly_accessible` databases (12-cloud-cost.md #11) |
 | aws | `student_pii_logs.rego` | in a student-pii root, create, update and no-op changes count. Log groups cap retention at 30 days (unless `psd:log-content=none`) and set a customer-managed KMS key. Bedrock invocation logging has text delivery off. No REST method settings, and no `aws_apigatewayv2_stage` default or per-route settings, turn on data tracing. In a student-pii root or the account-baseline root, every Bedrock content-delivery flag (text, image, embedding, video) must be `false`. A null or unknown flag fails (08-iac.md#student-pii-in-logs) |
 | aws | `student_pii_destinations.rego` | in a student-pii root, each log destination needs an exceptions.yml entry naming its exact address as scope and its kind as `destination.kind`. Kinds: subscription filter, log destination, account subscription policy, Firehose, log delivery, S3 export target, non-CloudWatch ECS log driver, vendor Lambda layer, OpenTelemetry exporter. An S3 export target is a bucket policy letting the logs service or any principal (`*`) write. An OpenTelemetry variable unknown at plan time counts, and so does an unknown ECS `container_definitions` (kind ecs-log-driver). The account subscription policy also counts in the account-baseline root. Bedrock logging to S3 is denied in a student-pii root or the account-baseline root. A student-pii app root may not hold a Bedrock logging configuration (08-iac.md#student-pii-log-destinations) |
-| aws | `account_controls.rego` | in the account-baseline root (`psd:root = account-baseline`), the data protection policy lists every identifier from `student-pii-account.json` in its Audit and Deidentify statements. A student-pii app root may not change the account policy (08-iac.md#student-pii-account-posture) |
+| aws | `account_controls.rego` | in the account-baseline root (every resource change with `tags_all` carries `psd:root = account-baseline`, judged by `before` for a delete; resources without `tags_all` do not count), the data protection policy lists every identifier from `student-pii-account.json` in its Audit and Deidentify statements. A student-pii app root may not change the account policy (08-iac.md#student-pii-account-posture) |
 | aws | `unmask.rego` | only the break-glass role named in `student-pii-account.json` is granted `logs:Unmask`, through an inline role policy in the account-baseline root. In that root, the break-glass role's inline policies allow only `logs:Unmask`, and the only managed policy it may hold is `CloudWatchLogsReadOnlyAccess`. Its trust names only account root principals. Every Allow statement requires `ArnLike aws:PrincipalArn` on the IAM Identity Center role of the `breakglass_permission_set_name` permission set, a source identity and `aws:RequestedRegion`. A document or ARN unknown at plan time fails. Create, update and no-op changes count (08-iac.md#student-pii-account-posture) |
 | gcp | `sa_keys.rego` | no `google_service_account_key` resources |
 | gcp | `deletion_policy.rego` | `deletion_policy = "PREVENT"` on `google_project`; `deletion_protection = true` on `google_sql_database_instance` |
@@ -215,8 +215,10 @@ dependency anything waits on); anything else needs an active, unexpired
 - An account-baseline root that never declares the account data protection
   policy passes the plan, because `account_controls.rego` fires only on a
   write to that policy.
-- `psd:root = account-baseline` is self-asserted. A root that tags itself
-  that way gets the baseline rules, which still require every identifier
-  and confine Unmask to the break-glass role.
+- `psd:root = account-baseline` is self-asserted. One tagged resource in an
+  app root does not make it the baseline root, because every resource
+  change with `tags_all` must carry the tag. A root that tags every resource
+  that way, through its `default_tags`, gets the baseline rules, which still
+  require every identifier and confine Unmask to the break-glass role.
 - Account policy types other than data protection and subscription filter,
   such as TRANSFORMER_POLICY, are not checked.

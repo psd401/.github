@@ -7,6 +7,16 @@ package aws
 # account-level controls. A student-pii app root is a student-pii root
 # (student_pii_logs.rego) that is not the baseline root.
 #
+# default_tags put the tag on every resource that has tags_all, so the plan is
+# the baseline root only when at least one resource change carries it and
+# every resource change with a tags_all object carries it. One tagged
+# resource in an app root does not turn the app-root denies off. A resource
+# with no tags_all (aws_cloudwatch_log_account_policy, IAM role policies)
+# counts neither way. A change is judged by change.after, or by
+# change.before for a delete (after null), so deleting an untagged resource
+# still counts. A no-op change carries the current tags_all in after and
+# counts like any other.
+#
 # data.student_pii_account is cloud.aws.student_pii from the environment file,
 # reduced by scripts/iac/resolve_env_file.py --student-pii-out to what these
 # rules compare against: present, breakglass_role_name,
@@ -17,9 +27,24 @@ package aws
 
 posture_rule := "08-iac.md#student-pii-account-posture"
 
-acct_baseline_root if {
+acct_root_tag_state(rc) := rc.change.after if is_object(rc.change.after)
+
+acct_root_tag_state(rc) := rc.change.before if {
+	rc.change.after == null
+	is_object(rc.change.before)
+}
+
+acct_root_tagged := [state.tags_all |
 	some rc in input.resource_changes
-	rc.change.after.tags_all["psd:root"] == "account-baseline"
+	state := acct_root_tag_state(rc)
+	is_object(state.tags_all)
+]
+
+acct_baseline_root if {
+	count(acct_root_tagged) > 0
+	every tags in acct_root_tagged {
+		tags["psd:root"] == "account-baseline"
+	}
 }
 
 acct_app_root if {
