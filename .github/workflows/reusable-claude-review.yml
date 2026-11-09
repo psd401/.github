@@ -130,6 +130,18 @@ jobs:
             or external services), test quality (do new tests actually assert
             behavior?), and CI weakening (removed/skipped tests = IMPORTANT).
 
+            Also IMPORTANT, citing the rule (psd-dev-standards standard 04):
+            - Rule 24: alert, digest, notification or chat-post code that
+              interpolates a student's name field from a student record. A
+              student username or ID number may appear only labeled (e.g.
+              `Username: 1000123`) and only to district technology staff
+              channels; a student name never.
+            - Rule 25: security detection rules, or a security log search or
+              analytics store used for detection (e.g. OpenSearch,
+              Elasticsearch, Splunk or Security Lake queries/rules), outside
+              CrowdStrike Falcon NG-SIEM. A log store used only as a feed,
+              cache or measuring bench is fine.
+
             Use the repository's CLAUDE.md for conventions. If the diff is
             clean, say so briefly — do not invent findings.
 
