@@ -4,6 +4,8 @@
 import importlib.util
 from pathlib import Path
 
+import yaml
+
 SCRIPT = Path(__file__).with_name("check_action_pins.py")
 spec = importlib.util.spec_from_file_location("check_action_pins", SCRIPT)
 pins = importlib.util.module_from_spec(spec)
@@ -120,3 +122,44 @@ def test_iac_tests_workflow_runs_the_checker_on_this_repos_workflows():
     assert "workflow-templates/*.yml" in cmd
     paths = wf.get("on", wf.get(True))["pull_request"]["paths"]  # PyYAML reads `on:` as True
     assert "scripts/iac/**" in paths
+
+
+ENV_CHECK = "psd401/.github/.github/workflows/reusable-env-file-check.yml"
+SCHEMA = "schemas/iac/environment-file.schema.json"
+DEPS = "tools/iac/requirements.txt"
+
+
+def env_check_problems(tmp_path, changed=()):
+    """Each file the reusable loads at its SHA has the same text in this tree and
+    at the pin, except the `changed` ones."""
+    root = tmp_path / "repo"
+    files = {f"psd401/.github/{SHA}/.github/workflows/reusable-env-file-check.yml": "on: workflow_call\n"}
+    for rel in (SCHEMA, DEPS):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(f"{rel} in this tree\n")
+        files[f"psd401/.github/{SHA}/{rel}"] = f"{rel} {'older' if rel in changed else 'in this tree'}\n"
+    f = tmp_path / "caller.yml"
+    f.write_text(f"jobs:\n  env-file-check:\n    uses: {ENV_CHECK}@{SHA}\n")
+    return f, pins.check([f], fetcher(files), local_root=root)
+
+
+def test_drift_check_covers_every_file_the_env_file_check_loads_at_its_own_sha():
+    doc = yaml.safe_load((pins.ROOT / ".github/workflows/reusable-env-file-check.yml").read_text())
+    loaded = set()
+    for job in doc["jobs"].values():
+        for s in job.get("steps", []):
+            w = s.get("with") or {}
+            if "job.workflow_sha" in str(w.get("ref", "")):
+                loaded |= set(w.get("sparse-checkout", "").split())
+    assert loaded == set(pins.SELF_PINNED_FILES[ENV_CHECK])
+
+
+def test_env_file_check_pin_must_carry_this_tree_s_schema(tmp_path):
+    """The pinned reusable validates against the schema at its own SHA, so a
+    pin older than a schema change rejects every env file that uses it."""
+    f, problems = env_check_problems(tmp_path, changed=(SCHEMA,))
+    assert problems == [f"{f}: {ENV_CHECK}@{SHA}: files at that SHA differ from this tree's ({SCHEMA}); re-pin it"]
+
+
+def test_env_file_check_pin_with_the_same_files_passes(tmp_path):
+    assert env_check_problems(tmp_path)[1] == []

@@ -1,0 +1,252 @@
+{
+  "dest_plan_pii": {
+    "resource_changes": [
+      {
+        "address": "aws_s3_bucket.data",
+        "type": "aws_s3_bucket",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "bucket": "app-data",
+            "tags_all": {
+              "psd:data-classification": "student-pii"
+            }
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_subscription_filter.ship",
+        "type": "aws_cloudwatch_log_subscription_filter",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "name": "ship",
+            "log_group_name": "/app",
+            "filter_pattern": "",
+            "destination_arn": "arn:aws:firehose:us-west-2:111111111111:deliverystream/ship"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_destination.central",
+        "type": "aws_cloudwatch_log_destination",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "name": "central",
+            "target_arn": "arn:aws:kinesis:us-west-2:111111111111:stream/central"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_account_policy.subscribe_all",
+        "type": "aws_cloudwatch_log_account_policy",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "update"
+          ],
+          "after": {
+            "policy_name": "subscribe-all",
+            "policy_type": "SUBSCRIPTION_FILTER_POLICY",
+            "scope": "ALL",
+            "policy_document": "{\"DestinationArn\": \"arn:aws:lambda:us-west-2:111111111111:function:fwd\", \"FilterPattern\": \"\"}"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_account_policy.masking",
+        "type": "aws_cloudwatch_log_account_policy",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "policy_name": "masking",
+            "policy_type": "DATA_PROTECTION_POLICY",
+            "scope": "ALL",
+            "policy_document": "{}"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_kinesis_firehose_delivery_stream.ship",
+        "type": "aws_kinesis_firehose_delivery_stream",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "no-op"
+          ],
+          "after": {
+            "name": "ship",
+            "destination": "extended_s3"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_delivery.kb",
+        "type": "aws_cloudwatch_log_delivery",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "delivery_source_name": "kb-logs",
+            "delivery_destination_arn": "arn:aws:logs:us-west-2:111111111111:delivery-destination:kb"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_s3_bucket_policy.export_target",
+        "type": "aws_s3_bucket_policy",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "bucket": "app-export",
+            "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Principal\": {\"Service\": \"logs.us-west-2.amazonaws.com\"}, \"Action\": \"s3:GetBucketAcl\", \"Resource\": \"arn:aws:s3:::app-export\"}, {\"Effect\": \"Allow\", \"Principal\": {\"Service\": \"logs.us-west-2.amazonaws.com\"}, \"Action\": \"s3:PutObject\", \"Resource\": \"arn:aws:s3:::app-export/*\"}]}"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_s3_bucket_policy.cdn_read",
+        "type": "aws_s3_bucket_policy",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "bucket": "app-site",
+            "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Principal\": {\"Service\": \"cloudfront.amazonaws.com\"}, \"Action\": \"s3:GetBucketAcl\", \"Resource\": \"arn:aws:s3:::app-export\"}, {\"Effect\": \"Allow\", \"Principal\": {\"Service\": \"cloudfront.amazonaws.com\"}, \"Action\": \"s3:PutObject\", \"Resource\": \"arn:aws:s3:::app-export/*\"}]}"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_ecs_task_definition.app",
+        "type": "aws_ecs_task_definition",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "family": "app",
+            "container_definitions": "[{\"name\": \"app\", \"image\": \"app:1\", \"logConfiguration\": {\"logDriver\": \"awslogs\", \"options\": {\"awslogs-group\": \"/ecs/app\", \"awslogs-region\": \"us-west-2\"}}, \"environment\": [{\"name\": \"OTEL_EXPORTER_OTLP_ENDPOINT\", \"value\": \"https://otlp.vendor.example:4318\"}, {\"name\": \"PORT\", \"value\": \"8080\"}]}, {\"name\": \"sidecar\", \"image\": \"sidecar:1\", \"logConfiguration\": {\"logDriver\": \"awsfirelens\", \"options\": {\"Name\": \"cloudwatch_logs\", \"region\": \"us-west-2\", \"log_group_name\": \"/ecs/sidecar\"}}}, {\"name\": \"shipper\", \"image\": \"shipper:1\", \"logConfiguration\": {\"logDriver\": \"splunk\", \"options\": {\"splunk-url\": \"https://splunk.vendor.example:8088\"}}}, {\"name\": \"router\", \"image\": \"router:1\", \"logConfiguration\": {\"logDriver\": \"awsfirelens\", \"options\": {\"Name\": \"firehose\", \"region\": \"us-west-2\", \"delivery_stream\": \"ship\"}}}]"
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_lambda_function.api",
+        "type": "aws_lambda_function",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "function_name": "api",
+            "layers": [
+              "arn:aws:lambda:us-west-2:464622532012:layer:Datadog-Extension:99",
+              "arn:aws:lambda:us-west-2:111111111111:layer:shared-utils:3"
+            ],
+            "environment": [
+              {
+                "variables": {
+                  "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://otlp.vendor.example:4318",
+                  "STAGE": "dev"
+                }
+              }
+            ]
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_lambda_function.plain",
+        "type": "aws_lambda_function",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "function_name": "plain",
+            "layers": [],
+            "environment": [
+              {
+                "variables": {
+                  "STAGE": "dev"
+                }
+              }
+            ]
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_subscription_filter.retired",
+        "type": "aws_cloudwatch_log_subscription_filter",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "delete"
+          ],
+          "after": null,
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_bedrock_model_invocation_logging_configuration.this",
+        "type": "aws_bedrock_model_invocation_logging_configuration",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "logging_config": [
+              {
+                "text_data_delivery_enabled": false,
+                "image_data_delivery_enabled": false,
+                "embedding_data_delivery_enabled": false,
+                "video_data_delivery_enabled": false,
+                "cloudwatch_config": [],
+                "s3_config": [
+                  {
+                    "bucket_name": "invocations",
+                    "key_prefix": ""
+                  }
+                ]
+              }
+            ]
+          },
+          "after_unknown": {}
+        }
+      }
+    ]
+  }
+}

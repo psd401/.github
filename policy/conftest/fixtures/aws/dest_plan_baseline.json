@@ -1,0 +1,58 @@
+{
+  "dest_plan_baseline": {
+    "resource_changes": [
+      {
+        "address": "aws_s3_bucket.data",
+        "type": "aws_s3_bucket",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "after": {
+            "bucket": "app-data",
+            "tags_all": {
+              "psd:root": "account-baseline",
+              "psd:data-classification": "student-pii"
+            }
+          },
+          "after_unknown": {}
+        }
+      },
+      {
+        "address": "aws_bedrock_model_invocation_logging_configuration.this",
+        "type": "aws_bedrock_model_invocation_logging_configuration",
+        "mode": "managed",
+        "change": {
+          "actions": [
+            "no-op"
+          ],
+          "after": {
+            "logging_config": [
+              {
+                "text_data_delivery_enabled": false,
+                "image_data_delivery_enabled": false,
+                "embedding_data_delivery_enabled": false,
+                "video_data_delivery_enabled": false,
+                "s3_config": [],
+                "cloudwatch_config": [
+                  {
+                    "log_group_name": "/aws/bedrock/invocations",
+                    "role_arn": "arn:aws:iam::111111111111:role/bedrock-logs",
+                    "large_data_delivery_s3_config": [
+                      {
+                        "bucket_name": "large",
+                        "key_prefix": ""
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "after_unknown": {}
+        }
+      }
+    ]
+  }
+}

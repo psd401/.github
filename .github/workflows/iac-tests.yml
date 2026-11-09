@@ -13,6 +13,8 @@ on:
       - schemas/iac/**
       - scripts/iac/**
       - tools/iac/**
+      - modules/**
+      - templates/account-baseline/**
 
 permissions:
   contents: read
@@ -69,3 +71,24 @@ jobs:
           python3 scripts/iac/check_action_pins.py
           .github/workflows/*.yml
           workflow-templates/*.yml
+
+  # Offline: tests/baseline.tftest.hcl mocks the aws provider, so no AWS
+  # credentials. Same setup-terraform pin and version as reusable-iac-checks.yml.
+  # -lockfile=readonly fails the job if the committed lock (aws 6.68.0) drifts.
+  baseline-module-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+      - name: terraform init
+        working-directory: modules/student-pii-account-baseline
+        run: terraform init -input=false -backend=false -lockfile=readonly
+      - name: terraform test
+        working-directory: modules/student-pii-account-baseline
+        run: terraform test

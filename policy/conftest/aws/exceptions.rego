@@ -63,6 +63,19 @@ exception_active(rule_id, scope) if {
 # waives one address under one standard (the student-pii rules use it).
 exception_active_exact(rule_id, scope) if {
 	some entry in data.exceptions
+	exact_entry_active(entry, rule_id, scope)
+}
+
+# exception_active_exact_kind: as exception_active_exact, and the entry's
+# destination.kind equals kind, so one entry waives one destination kind at
+# one address (student_pii_destinations.rego uses it).
+exception_active_exact_kind(rule_id, scope, kind) if {
+	some entry in data.exceptions
+	exact_entry_active(entry, rule_id, scope)
+	entry.destination.kind == kind
+}
+
+exact_entry_active(entry, rule_id, scope) if {
 	entry.status == "active"
 	entry.standard == rule_id
 	entry.scope == scope

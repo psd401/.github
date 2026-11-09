@@ -1,0 +1,26 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.16.5",
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket.old_exports",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "old_exports",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete"],
+        "before": {
+          "bucket": "sis-sync-old-exports",
+          "tags": null,
+          "tags_all": {"psd:application": "sis-sync", "psd:data-classification": "student-pii"}
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {"tags_all": {}},
+        "after_sensitive": false
+      },
+      "action_reason": "delete_because_no_resource_config"
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "_comment": "Permission boundary for the account-baseline apply role (templates/account-baseline/README.md, Names), which applies templates/account-baseline/ (08-iac.md#student-pii-account-posture). It allows the account log-control writes that templates/terraform-app/boundary/deploy-role-boundary.json.tmpl denies to app deploy roles, and it still denies logs:Unmask. Fill in <repo>, <region>, <account-alias> and <breakglass-role-name>, and submit the file with the deploy-role request. This file never carries a real account ID.",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAccountLogPolicy",
+      "_justification": "Resource * is required: PutAccountPolicy, DeleteAccountPolicy and DescribeAccountPolicies have no resource type, and an account-level data protection policy also needs PutDataProtectionPolicy and DeleteDataProtectionPolicy on * (CloudWatch Logs User Guide, data protection policy permissions, read 2026-10-23).",
+      "Effect": "Allow",
+      "Action": [
+        "logs:PutAccountPolicy",
+        "logs:DeleteAccountPolicy",
+        "logs:DescribeAccountPolicies",
+        "logs:PutDataProtectionPolicy",
+        "logs:DeleteDataProtectionPolicy",
+        "logs:GetDataProtectionPolicy"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowBedrockLoggingConfig",
+      "_justification": "Resource * is required: the model invocation logging actions have no resource type (IAM service reference for bedrock v1.5, read 2026-10-23).",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:PutModelInvocationLoggingConfiguration",
+        "bedrock:GetModelInvocationLoggingConfiguration",
+        "bedrock:DeleteModelInvocationLoggingConfiguration"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowBreakGlassRole",
+      "_justification": "The break-glass role only, by exact name. Managed policy attachment is the separate AllowBreakGlassReadPolicy statement.",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:ListRoleTags",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::*:role/<breakglass-role-name>"
+    },
+    {
+      "Sid": "AllowBreakGlassReadPolicy",
+      "_justification": "logs:Unmask only changes what a read returns, so the break-glass role carries the AWS managed read-only logs policy, which grants no Unmask. No other managed policy can be attached.",
+      "Effect": "Allow",
+      "Action": "iam:AttachRolePolicy",
+      "Resource": "arn:aws:iam::*:role/<breakglass-role-name>",
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": "arn:aws:iam::aws:policy/CloudWatchLogsReadOnlyAccess"
+        }
+      }
+    },
+    {
+      "Sid": "AllowBreakGlassAlertRule",
+      "Effect": "Allow",
+      "Action": [
+        "events:PutRule",
+        "events:DeleteRule",
+        "events:DescribeRule",
+        "events:PutTargets",
+        "events:RemoveTargets",
+        "events:ListTargetsByRule",
+        "events:TagResource",
+        "events:UntagResource",
+        "events:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:events:*:*:rule/student-pii-breakglass-assumed"
+    },
+    {
+      "Sid": "AllowReadOnlyDiscovery",
+      "_justification": "Resource * is required: sns:ListTopics has no resource type, and the alerts topic is looked up by name from cloud.aws.alerts_topic_name. Read-only.",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "sns:ListTopics",
+        "sns:GetTopicAttributes",
+        "sns:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowStateBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::psd-tfstate-<account-alias>-<region>",
+        "arn:aws:s3:::psd-tfstate-<account-alias>-<region>/<repo>/*"
+      ]
+    },
+    {
+      "Sid": "DenyLogsUnmask",
+      "_justification": "Resource * is required: logs:Unmask on any log group returns masked student PII in clear. Only the break-glass role may unmask (08-iac.md#student-pii-account-posture), and this apply role is not it.",
+      "Effect": "Deny",
+      "Action": "logs:Unmask",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyAssumeBreakGlass",
+      "_justification": "This role manages the break-glass role's trust policy, so it must never assume that role itself and unmask through it.",
+      "Effect": "Deny",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::*:role/<breakglass-role-name>"
+    },
+    {
+      "Sid": "DenyIamUserCreation",
+      "_justification": "Resource * is required: no principal in this account may create users or keys (13-aws-accounts.md rule 4, 08-iac.md).",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

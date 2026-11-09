@@ -1,0 +1,11 @@
+# A 08-iac.md#student-pii-downgrade entry. Its scope is the exact address
+# fixtures/downgrade/plan_tag_dropped.json downgrades.
+exceptions:
+  - id: sis-sync-archive-declassified
+    standard: "08-iac.md#student-pii-downgrade"
+    rule: A student-pii resource keeps its classification tag
+    reason: The archive bucket holds only aggregate counts after the purge
+    scope: aws_s3_bucket.archive
+    approved_by: Chief Information Officer
+    status: active
+    expires: "2027-06-30"

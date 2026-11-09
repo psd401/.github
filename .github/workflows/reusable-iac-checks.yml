@@ -372,13 +372,22 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
 
+      # A caller repo can commit tfplan.json or student-pii-account.json in
+      # working_directory. The upload below would carry either one a later
+      # step did not overwrite, so both go before any step writes them.
+      - name: Remove committed copies of the derived files
+        run: rm -f tfplan.json student-pii-account.json
+
       # The state bucket name and the district defaults live in the private
       # environment file (08-iac.md 'Private environment file'), never in the
       # repo. This decodes it inside the job, writes backend.hcl for the
       # partial backend "s3" block templates/terraform-app ships, and exports
       # TF_VAR_repo, TF_VAR_account_alias, TF_VAR_alerts_topic_name and
-      # TF_VAR_bedrock_default_model_id (gcp: TF_VAR_project_id). Nothing
-      # prints a value.
+      # TF_VAR_bedrock_default_model_id (gcp: TF_VAR_project_id). It also
+      # writes student-pii-account.json: cloud.aws.student_pii reduced to the
+      # break-glass role name and the data identifiers that
+      # policy/conftest/aws/account_controls.rego and unmask.rego compare
+      # against. Nothing prints a value.
       - name: Resolve private environment file (backend.hcl, TF_VAR_*)
         env:
           PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
@@ -397,7 +406,8 @@ jobs:
             --env-file "$tmpdir/env.yml" --github-env "$GITHUB_ENV" \
             --platform "$PLATFORM" --environment "$ENVIRONMENT" \
             --account-alias "$ACCOUNT_ALIAS" --repo "$REPO_NAME" \
-            --region "$AWS_REGION" --backend-out backend.hcl
+            --region "$AWS_REGION" --backend-out backend.hcl \
+            --student-pii-out student-pii-account.json
 
       - name: terraform init
         run: |
@@ -468,6 +478,7 @@ jobs:
           path: |
             ${{ inputs.working_directory }}/tfplan.age
             ${{ inputs.working_directory }}/tfplan.json
+            ${{ inputs.working_directory }}/student-pii-account.json
           # One day covers the merge-triggered apply in the same run.
           retention-days: 1
 
@@ -610,10 +621,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # Into $RUNNER_TEMP/plan, outside the caller checkout: downloaded over
+      # working_directory, a file the caller committed there would stand in
+      # for one the artifact lacks. Every step below reads the plan and the
+      # derived files from this directory.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.plan.outputs.artifact_name }}
-          path: ${{ inputs.working_directory }}
+          path: ${{ runner.temp }}/plan
 
       # tooling_ref picks which commit of this repo's helpers runs with this
       # job's token and secrets. It reaches the shell only through env, and
@@ -646,7 +661,9 @@ jobs:
           path: _policy
           sparse-checkout: |
             policy/conftest/
+            policy/data/telemetry-layers.yml
             schemas/iac/exceptions.schema.json
+            scripts/iac/check_classification_downgrade.py
             scripts/iac/check_exceptions.py
             scripts/iac/install_conftest.sh
             tools/iac/requirements.txt
@@ -665,13 +682,29 @@ jobs:
       # helpers read (policy/conftest/README.md).
       - name: conftest test (tags, regions, IAM bans, lifecycle, backend naming)
         env:
-          WORKING_DIRECTORY: ${{ inputs.working_directory }}
           PLATFORM: ${{ inputs.platform }}
+        # On aws the account-baseline rules (policy/conftest/aws/
+        # account_controls.rego, unmask.rego) also read the plan job's
+        # student-pii-account.json, and deny an account-baseline root when it
+        # is missing. It is passed only when the artifact holds it: conftest
+        # exits 1 with a loader error on a --data path that does not exist,
+        # before that deny can name the missing file. The destination rule
+        # reads the vendor telemetry-layer list and denies a student-pii
+        # Lambda with layers when it is missing
+        # (policy/conftest/aws/student_pii_destinations.rego).
         run: |
+          plan_dir="$RUNNER_TEMP/plan"
+          data=(--data exceptions.yml)
+          if [ "$PLATFORM" = aws ]; then
+            if [ -f "$plan_dir/student-pii-account.json" ]; then
+              data+=(--data "$plan_dir/student-pii-account.json")
+            fi
+            data+=(--data _policy/policy/data/telemetry-layers.yml)
+          fi
           conftest test \
-            "${WORKING_DIRECTORY}/tfplan.json" \
+            "$plan_dir/tfplan.json" \
             --policy "_policy/policy/conftest/${PLATFORM}" \
-            --data exceptions.yml \
+            "${data[@]}" \
             --all-namespaces
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -693,6 +726,20 @@ jobs:
         run: |
           python3 _policy/scripts/iac/check_exceptions.py \
             --schema _policy/schemas/iac/exceptions.schema.json exceptions.yml
+
+      # standards/08-iac.md 'Student PII downgrade'. Fails when a resource that
+      # carried psd:data-classification = student-pii before this plan loses
+      # it (tag edit, default_tags edit, or replace), unless an active
+      # exceptions.yml entry for 08-iac.md#student-pii-downgrade has exactly
+      # that address as its scope. The cross-check above installs the modules
+      # this script imports. The redacted plan keeps tags in change.before
+      # (scripts/iac/test_check_classification_downgrade.py).
+      - name: Classification downgrade check (standards/08-iac.md 'Student PII downgrade')
+        if: inputs.platform == 'aws'
+        run: |
+          python3 _policy/scripts/iac/check_classification_downgrade.py \
+            --plan-json "$RUNNER_TEMP/plan/tfplan.json" \
+            --exceptions exceptions.yml
 
   infracost:
     name: infracost

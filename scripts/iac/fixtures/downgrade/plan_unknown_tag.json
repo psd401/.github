@@ -1,0 +1,32 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.16.5",
+  "resource_changes": [
+    {
+      "address": "aws_cloudwatch_log_group.child",
+      "mode": "managed",
+      "type": "aws_cloudwatch_log_group",
+      "name": "child",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": {
+          "name": "/sis-sync/child",
+          "tags": {"parent": "arn:aws:logs:us-west-2:123456789012:log-group:/sis-sync/errors"},
+          "tags_all": {
+            "parent": "arn:aws:logs:us-west-2:123456789012:log-group:/sis-sync/errors",
+            "psd:data-classification": "student-pii"
+          }
+        },
+        "after": {
+          "name": "/sis-sync/child",
+          "tags": null,
+          "tags_all": null
+        },
+        "after_unknown": {"tags": true, "tags_all": true},
+        "before_sensitive": {"tags": {}, "tags_all": {}},
+        "after_sensitive": {"tags": {}, "tags_all": {}}
+      }
+    }
+  ]
+}

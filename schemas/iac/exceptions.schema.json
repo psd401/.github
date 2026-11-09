@@ -76,8 +76,64 @@
           "type": "string",
           "description": "Optional. Only meaningful on an entry whose standard is \"08-iac.md#region-consistency\" and whose scope is a psd:application tag value: declares that app's canonical AWS region. A single `conftest test` run only sees one environment's plan, so a cross-environment region mismatch (dev in one region, prod in another) can't be checked by comparing two plans directly. exceptions.yml is committed once per repo and read by every environment's run, so each environment's plan is instead checked against this one shared declaration (standards/08-iac.md, named gap #24).",
           "examples": ["<aws-region>"]
+        },
+        "destination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "target", "operator", "retention_days", "kms"],
+          "description": "The log destination an 08-iac.md#student-pii-log-destinations entry allows. Each destination is a disclosure to its operator.",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "subscription-filter",
+                "log-destination",
+                "account-subscription",
+                "firehose",
+                "log-delivery",
+                "s3-export",
+                "ecs-log-driver",
+                "lambda-telemetry",
+                "otel-exporter",
+                "bedrock-s3",
+                "syslog-collector"
+              ],
+              "description": "Destination kind, the same tokens policy/conftest/aws/student_pii_destinations.rego uses."
+            },
+            "target": {
+              "type": "string",
+              "minLength": 1,
+              "description": "ARN or hostname the log content goes to.",
+              "examples": ["<destination-arn-or-host>"]
+            },
+            "operator": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The legal party that reads the store, e.g. \"aws\" or the vendor that runs it.",
+              "examples": ["<operator>"]
+            },
+            "retention_days": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Days the destination keeps the log content.",
+              "examples": [30]
+            },
+            "kms": {
+              "type": "boolean",
+              "description": "Whether the destination encrypts at rest with a KMS key."
+            }
+          }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["standard"],
+            "properties": { "standard": { "const": "08-iac.md#student-pii-log-destinations" } }
+          },
+          "then": { "required": ["destination"] }
+        }
+      ]
     }
   }
 }

@@ -1,0 +1,13 @@
+{
+  "_comment": "Inline policy for the IAM Identity Center permission set named in cloud.aws.student_pii.breakglass_permission_set_name (docs/runbooks/student-pii-unmask.md). The break-glass role trusts only that permission set's role, so this policy grants only the assumption. Fill in <breakglass-role-name> and submit the file with the permission set request. Assign the permission set only in accounts that run the account baseline, and only to the people who run the unmask runbook.",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumeBreakGlassRole",
+      "_justification": "sts:SetSourceIdentity is required because the trust requires a caller-set source identity, the ticket id. The account is a wildcard because the break-glass trust already limits callers to its own account.",
+      "Effect": "Allow",
+      "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
+      "Resource": "arn:aws:iam::*:role/<breakglass-role-name>"
+    }
+  ]
+}

@@ -8,12 +8,18 @@ where the action's subdirectory or the reusable workflow file is absent
 passes both and fails at run time. This reads each pinned target from
 raw.githubusercontent.com at its SHA. Unpinned refs are
 reusable-security-scan.yml's job (zizmor) and are skipped here.
+
+A pin of this repo's reusable-env-file-check.yml also fails when a file that
+reusable loads at its own SHA differs from this tree's: the environment-file
+schema and the locked validator deps. A pin older than a schema change rejects
+every env file that uses the new fields.
 """
 import os
 import re
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 USES = re.compile(r"""^\s*(?:-\s*)?uses:\s*['"]?([^\s'"#]+)""", re.MULTILINE)
 USING = re.compile(r"""^\s*using:\s*['"]?([\w-]+)""", re.MULTILINE)
@@ -21,6 +27,14 @@ FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 # GitHub-hosted runners no longer ship these (changelog 2026-09-23,
 # "Node 20 is no longer available in GitHub Actions").
 REMOVED_RUNTIMES = {"node12", "node16", "node20"}
+ROOT = Path(__file__).resolve().parents[2]
+# Reusables in this repo that read files at their own SHA, and those files.
+SELF_PINNED_FILES = {
+    "psd401/.github/.github/workflows/reusable-env-file-check.yml": [
+        "schemas/iac/environment-file.schema.json",
+        "tools/iac/requirements.txt",
+    ],
+}
 
 
 def fetch_raw(owner_repo, sha, path):
@@ -50,7 +64,7 @@ def pinned_refs(text):
     return seen
 
 
-def problem_for(ref, fetch, cache):
+def problem_for(ref, fetch, cache, local_root):
     if ref in cache:
         return cache[ref]
     target, sha = ref.rsplit("@", 1)
@@ -60,6 +74,11 @@ def problem_for(ref, fetch, cache):
     if sub.startswith(".github/workflows/"):
         if fetch(owner_repo, sha, sub) is None:
             result = f"{ref}: {sub} does not exist at that SHA"
+        elif target.lower() in SELF_PINNED_FILES:
+            changed = [dep for dep in SELF_PINNED_FILES[target.lower()]
+                       if fetch(owner_repo, sha, dep) != (local_root / dep).read_text(encoding="utf-8")]
+            if changed:
+                result = f"{ref}: files at that SHA differ from this tree's ({', '.join(changed)}); re-pin it"
     else:
         prefix = f"{sub}/" if sub else ""
         text = fetch(owner_repo, sha, f"{prefix}action.yml")
@@ -76,11 +95,11 @@ def problem_for(ref, fetch, cache):
     return result
 
 
-def check(files, fetch=fetch_raw):
+def check(files, fetch=fetch_raw, local_root=ROOT):
     cache, problems = {}, []
     for f in files:
         for ref in pinned_refs(open(f, encoding="utf-8").read()):
-            p = problem_for(ref, fetch, cache)
+            p = problem_for(ref, fetch, cache, local_root)
             if p:
                 problems.append(f"{f}: {p}")
     return problems

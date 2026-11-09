@@ -82,6 +82,14 @@ pattern_regexes=(
 )
 pattern_ignorecase=(0 1 0 0 1 1 0)
 
+# A 40-hex git commit SHA (an action pin, a commit cited in a doc) can hold 12
+# consecutive digits. It is never an account ID, so both scan modes blank it
+# before matching. The guards keep a longer hex run intact.
+SHA_BLANK='s/(^|[^0-9A-Za-z])[0-9a-f]{40}([^0-9A-Za-z]|$)/\1<sha>\2/g'
+# SHA_RE splits a line around its last guarded SHA, so diff mode replaces
+# the SHA where it matched, not an earlier copy of the same text.
+SHA_RE='^((.*[^0-9A-Za-z])?)[0-9a-f]{40}(([^0-9A-Za-z].*)?)$'
+
 # --- allowlist / hostname-deny loaders ---------------------------------------
 allow_literals=()
 allow_regexes=()
@@ -131,6 +139,10 @@ scan_line() {
   if [[ "$content" =~ \"zh:[0-9a-f]{64}\",?[[:space:]]*$ ]]; then
     return
   fi
+  # same blanking as SHA_BLANK, in-process because this runs once per added line
+  while [[ "$content" =~ $SHA_RE ]]; do
+    content="${BASH_REMATCH[1]}<sha>${BASH_REMATCH[3]}"
+  done
 
   for idx in "${!pattern_names[@]}"; do
     name="${pattern_names[$idx]}"
@@ -299,7 +311,7 @@ scan_file() {
       is_allowed "$m" && continue
       echo "REDACTION: $f:$lineno: $name: $m"
       findings=$((findings + 1))
-    done < <(sed -E 's/^([[:space:]]*)"zh:[0-9a-f]{64}",?([[:space:]]*)$//' "$f" \
+    done < <(sed -E -e 's/^([[:space:]]*)"zh:[0-9a-f]{64}",?([[:space:]]*)$//' -e "$SHA_BLANK" "$f" \
                 | grep -noE $flags -- "$regex" || true)
   done
 

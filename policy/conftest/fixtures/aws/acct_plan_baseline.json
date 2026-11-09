@@ -1,0 +1,184 @@
+{
+  "acct_plan_baseline": {
+    "format_version": "1.2",
+    "terraform_version": "1.16.5",
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "full_name": "registry.terraform.io/hashicorp/aws",
+          "expressions": {
+            "default_tags": [
+              {
+                "tags": {
+                  "constant_value": {
+                    "psd:application": "account-baseline",
+                    "psd:data-classification": "internal",
+                    "psd:environment": "prod",
+                    "psd:managed-by": "terraform",
+                    "psd:owner": "platform-team",
+                    "psd:repo": "district-account-baseline",
+                    "psd:root": "account-baseline"
+                  }
+                }
+              }
+            ],
+            "region": {
+              "constant_value": "us-west-2"
+            }
+          }
+        }
+      }
+    },
+    "resource_changes": [
+      {
+        "address": "aws_bedrock_model_invocation_logging_configuration.this",
+        "mode": "managed",
+        "type": "aws_bedrock_model_invocation_logging_configuration",
+        "name": "this",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "logging_config": [
+              {
+                "cloudwatch_config": [
+                  {
+                    "large_data_delivery_s3_config": [],
+                    "log_group_name": "/district/bedrock/invocations",
+                    "role_arn": "arn:aws:iam::111111111111:role/bedrock-invocation-logging"
+                  }
+                ],
+                "embedding_data_delivery_enabled": false,
+                "image_data_delivery_enabled": false,
+                "s3_config": [],
+                "text_data_delivery_enabled": false,
+                "video_data_delivery_enabled": false
+              }
+            ],
+            "region": "us-west-2"
+          },
+          "after_unknown": {
+            "id": true,
+            "logging_config": [
+              {
+                "cloudwatch_config": [
+                  {
+                    "large_data_delivery_s3_config": []
+                  }
+                ],
+                "s3_config": []
+              }
+            ]
+          }
+        }
+      },
+      {
+        "address": "aws_cloudwatch_log_account_policy.student_pii",
+        "mode": "managed",
+        "type": "aws_cloudwatch_log_account_policy",
+        "name": "student_pii",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "policy_document": "{\"Configuration\":{\"CustomDataIdentifier\":[{\"Name\":\"StudentId\",\"Regex\":\"S[0-9]{7}\"}]},\"Name\":\"student-pii\",\"Statement\":[{\"DataIdentifier\":[\"arn:aws:dataprotection::aws:data-identifier/Name\",\"arn:aws:dataprotection::aws:data-identifier/EmailAddress\",\"arn:aws:dataprotection::aws:data-identifier/Address\",\"StudentId\"],\"Operation\":{\"Audit\":{\"FindingsDestination\":{}}},\"Sid\":\"audit\"},{\"DataIdentifier\":[\"arn:aws:dataprotection::aws:data-identifier/Name\",\"arn:aws:dataprotection::aws:data-identifier/EmailAddress\",\"arn:aws:dataprotection::aws:data-identifier/Address\",\"StudentId\"],\"Operation\":{\"Deidentify\":{\"MaskConfig\":{}}},\"Sid\":\"redact\"}],\"Version\":\"2021-06-01\"}",
+            "policy_name": "student-pii",
+            "policy_type": "DATA_PROTECTION_POLICY",
+            "region": "us-west-2",
+            "scope": "ALL",
+            "selection_criteria": null
+          },
+          "after_unknown": {
+            "id": true
+          }
+        }
+      },
+      {
+        "address": "aws_iam_role.breakglass",
+        "mode": "managed",
+        "type": "aws_iam_role",
+        "name": "breakglass",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "assume_role_policy": "{\"Statement\":[{\"Action\":[\"sts:AssumeRole\",\"sts:SetSourceIdentity\"],\"Condition\":{\"ArnLike\":{\"aws:PrincipalArn\":\"arn:aws:iam::111111111111:role/aws-reserved/sso.amazonaws.com*/AWSReservedSSO_StudentPiiBreakGlass_*\"},\"Null\":{\"sts:SourceIdentity\":\"false\"},\"StringEquals\":{\"aws:RequestedRegion\":\"us-west-2\"}},\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::111111111111:root\"},\"Sid\":\"PermissionSetAndSourceIdentityRequired\"}],\"Version\":\"2012-10-17\"}",
+            "description": null,
+            "force_detach_policies": false,
+            "max_session_duration": 3600,
+            "name": "district-breakglass-unmask",
+            "path": "/",
+            "permissions_boundary": null,
+            "tags": null,
+            "tags_all": {
+              "psd:application": "account-baseline",
+              "psd:data-classification": "internal",
+              "psd:environment": "prod",
+              "psd:managed-by": "terraform",
+              "psd:owner": "platform-team",
+              "psd:repo": "district-account-baseline",
+              "psd:root": "account-baseline"
+            }
+          },
+          "after_unknown": {
+            "arn": true,
+            "create_date": true,
+            "id": true,
+            "inline_policy": true,
+            "managed_policy_arns": true,
+            "name_prefix": true,
+            "tags_all": {},
+            "unique_id": true
+          }
+        }
+      },
+      {
+        "address": "aws_iam_role_policy.breakglass_unmask",
+        "mode": "managed",
+        "type": "aws_iam_role_policy",
+        "name": "breakglass_unmask",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "name": "student-pii-unmask",
+            "policy": "{\"Statement\":[{\"Action\":[\"logs:Unmask\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:logs:us-west-2:111111111111:log-group:*\"],\"Sid\":\"AllowUnmask\"}],\"Version\":\"2012-10-17\"}",
+            "role": "district-breakglass-unmask"
+          },
+          "after_unknown": {
+            "id": true,
+            "name_prefix": true
+          }
+        }
+      },
+      {
+        "address": "aws_iam_role_policy_attachment.breakglass_read",
+        "mode": "managed",
+        "type": "aws_iam_role_policy_attachment",
+        "name": "breakglass_read",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "policy_arn": "arn:aws:iam::aws:policy/CloudWatchLogsReadOnlyAccess",
+            "role": "district-breakglass-unmask"
+          },
+          "after_unknown": {
+            "id": true
+          }
+        }
+      }
+    ]
+  }
+}

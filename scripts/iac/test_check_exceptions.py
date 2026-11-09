@@ -8,6 +8,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+import yaml
+from jsonschema import Draft202012Validator
+
 HERE = Path(__file__).parent
 SCRIPT = HERE / "check_exceptions.py"
 SCHEMA = HERE.parent.parent / "schemas" / "iac" / "exceptions.schema.json"
@@ -41,6 +45,21 @@ def test_expired_entry_fails():
 
 def test_expired_entry_passes_before_its_date():
     r = run("--require", RULE44, str(FIX / "rule44_expired.yml"), today="2025-12-31")
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.parametrize("today", ["", "2026-9-1", "2026-02-30"])
+def test_today_that_is_not_a_date_is_refused(today):
+    """Expiry compares YYYY-MM-DD strings, so an empty --today would keep every entry unexpired."""
+    r = run("--require", RULE44, str(FIX / "rule44_expired.yml"), today=today)
+    assert r.returncode == 2
+    assert "--today" in r.stderr
+
+
+def test_today_defaults_to_a_date():
+    r = subprocess.run([sys.executable, str(SCRIPT), "--schema", str(SCHEMA),
+                        "--require", RULE44, str(FIX / "rule44_active.yml")],
+                       capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
 
@@ -97,3 +116,52 @@ def test_approved_by_description_claims_no_approving_review():
     props = json.loads(SCHEMA.read_text())["$defs"]["exception"]["properties"]
     assert "approving review" not in props["approved_by"]["description"]
 
+
+
+def fixture_entry(name):
+    return yaml.safe_load((FIX / name).read_text())["exceptions"][0]
+
+
+def entry_errors(entry):
+    """(path, failing keyword) for every schema error in a one-entry file."""
+    schema = json.loads(SCHEMA.read_text())
+    return {("/".join(str(p) for p in e.absolute_path), e.validator)
+            for e in Draft202012Validator(schema).iter_errors({"exceptions": [entry]})}
+
+
+@pytest.mark.parametrize("name", ["in_logs.yml", "log_destination.yml", "downgrade.yml"])
+def test_student_pii_fixtures_validate_and_pass(name):
+    """Student-pii entries need no signed record: the check passes them like any other."""
+    assert entry_errors(fixture_entry(name)) == set()
+    r = run(str(FIX / name))
+    assert r.returncode == 0, r.stderr
+
+
+def test_log_destination_entry_needs_a_destination_block():
+    entry = fixture_entry("log_destination.yml")
+    del entry["destination"]
+    assert entry_errors(entry) == {("exceptions/0", "required")}
+
+
+@pytest.mark.parametrize("field, value, error", [
+    ("kind", "kinesis", ("exceptions/0/destination/kind", "enum")),
+    ("retention_days", 0, ("exceptions/0/destination/retention_days", "minimum")),
+    ("retention_days", 7.5, ("exceptions/0/destination/retention_days", "type")),
+    ("kms", "yes", ("exceptions/0/destination/kms", "type")),
+    ("operator", None, ("exceptions/0/destination", "required")),
+    ("target", None, ("exceptions/0/destination", "required")),
+    ("region", "us-west-2", ("exceptions/0/destination", "additionalProperties")),
+])
+def test_destination_block_fields(field, value, error):
+    entry = fixture_entry("log_destination.yml")
+    if value is None:
+        del entry["destination"][field]
+    else:
+        entry["destination"][field] = value
+    assert entry_errors(entry) == {error}
+
+
+def test_destination_block_on_another_standard_is_not_required():
+    entry = fixture_entry("in_logs.yml")
+    assert "destination" not in entry
+    assert entry_errors(entry) == set()

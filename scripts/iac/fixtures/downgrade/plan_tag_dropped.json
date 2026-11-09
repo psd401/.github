@@ -1,0 +1,80 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.16.5",
+  "variables": {
+    "data_classification": {"value": "internal"}
+  },
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket.archive",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "archive",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": {
+          "bucket": "sis-sync-archive",
+          "tags": null,
+          "tags_all": {"psd:application": "sis-sync", "psd:data-classification": "student-pii"}
+        },
+        "after": {
+          "bucket": "sis-sync-archive",
+          "tags": null,
+          "tags_all": {"psd:application": "sis-sync", "psd:data-classification": "internal"}
+        },
+        "after_unknown": {"tags_all": {}},
+        "before_sensitive": {"tags_all": {}},
+        "after_sensitive": {"tags_all": {}}
+      }
+    }
+  ],
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.16.5",
+    "values": {
+      "root_module": {
+        "resources": [
+          {
+            "address": "aws_s3_bucket.archive",
+            "mode": "managed",
+            "type": "aws_s3_bucket",
+            "name": "archive",
+            "values": {
+              "bucket": "sis-sync-archive",
+              "tags": null,
+              "tags_all": {"psd:application": "sis-sync", "psd:data-classification": "student-pii"}
+            },
+            "sensitive_values": {"tags_all": {}}
+          }
+        ]
+      }
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "aws": {
+        "name": "aws",
+        "full_name": "registry.terraform.io/hashicorp/aws",
+        "expressions": {
+          "region": {"constant_value": "us-west-2"},
+          "default_tags": [
+            {"tags": {"references": ["var.data_classification"]}}
+          ]
+        }
+      }
+    },
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_s3_bucket.archive",
+          "mode": "managed",
+          "type": "aws_s3_bucket",
+          "name": "archive",
+          "provider_config_key": "aws",
+          "expressions": {"bucket": {"constant_value": "sis-sync-archive"}}
+        }
+      ]
+    }
+  }
+}

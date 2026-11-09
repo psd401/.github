@@ -15,15 +15,32 @@ Usage: check_exceptions.py --schema <exceptions.schema.json>
    checked against single entries, so a retired entry for the required
    standard plus an unrelated active entry does not pass.
 
+--today must be a real YYYY-MM-DD date and defaults to today in UTC; dates
+compare as YYYY-MM-DD strings.
+
 Prints paths and standard ids only, never an entry's free-text fields.
 """
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 
 import yaml
 from jsonschema import Draft202012Validator
+
+DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def iso_date(value):
+    """A YYYY-MM-DD string as a date. Expiry compares strings, so a value that
+    is not a real date (empty, unpadded, 02-30) is refused."""
+    try:
+        if DATE.fullmatch(value):
+            return dt.date.fromisoformat(value)
+    except ValueError:
+        pass
+    raise argparse.ArgumentTypeError("must be a YYYY-MM-DD date")
 
 
 def load(path):
@@ -74,9 +91,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--schema", required=True)
     ap.add_argument("--require", action="append", default=[])
-    ap.add_argument("--today", default=dt.date.today().isoformat())
+    ap.add_argument("--today", type=iso_date, default=dt.datetime.now(dt.timezone.utc).date(),
+                    help="YYYY-MM-DD; defaults to today in UTC")
     ap.add_argument("path", nargs="?", default="exceptions.yml")
     args = ap.parse_args()
+    args.today = args.today.isoformat()
 
     try:
         data = load(args.path)
