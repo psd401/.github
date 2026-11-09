@@ -5,5 +5,5 @@ on:
     branches: [$default-branch]
 jobs:
   psd-ci:
-    uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@d5be9265b78fa3d21c73ea42840bce9148a2d8e3 # v1.2.2
+    uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@704b95336d5ee06510f81054400d42caa12db8d9 # v1.3.1
     secrets: inherit
