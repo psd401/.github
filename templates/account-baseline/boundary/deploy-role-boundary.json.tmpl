@@ -18,10 +18,9 @@
     },
     {
       "Sid": "AllowBedrockLoggingConfig",
-      "_justification": "Resource * is required: the model invocation logging actions have no resource type (IAM service reference for bedrock v1.5, read 2026-10-23).",
+      "_justification": "Resource * is required: the model invocation logging actions have no resource type (IAM service reference for bedrock v1.5, read 2026-10-23). The account keeps no configuration (templates/account-baseline/README.md, No invocation logging), so there is no Put. Get runs the check, and Delete removes a configuration someone else created, which in organization mode only this role may do.",
       "Effect": "Allow",
       "Action": [
-        "bedrock:PutModelInvocationLoggingConfiguration",
         "bedrock:GetModelInvocationLoggingConfiguration",
         "bedrock:DeleteModelInvocationLoggingConfiguration"
       ],

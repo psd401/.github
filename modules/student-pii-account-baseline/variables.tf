@@ -5,7 +5,7 @@
 # data/partitions.json (read 2026-10-23), such as us-west-2, us-gov-west-1 and
 # eusc-de-east-1. It rejects the aws-global style endpoint names.
 variable "regions" {
-  description = "Regions that get an account-level data protection policy and a Bedrock logging configuration (cloud.aws.student_pii.regions)."
+  description = "Regions that get an account-level data protection policy (cloud.aws.student_pii.regions)."
   type        = list(string)
 
   validation {

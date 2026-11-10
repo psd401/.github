@@ -2,7 +2,7 @@
 
 Account-level student-pii controls, applied once per account by
 `templates/account-baseline/`. The template README covers prerequisites,
-apply order, the audio flag, the SCP and break-glass use.
+apply order, the no-invocation-logging check, the SCP and break-glass use.
 
 ## Resources
 
@@ -13,9 +13,6 @@ apply order, the audio flag, the SCP and break-glass use.
   identifiers are defined in `Configuration.CustomDataIdentifier` as
   `{Name, Regex}` and referenced by bare name. The Audit statement has an empty
   `FindingsDestination`.
-- `aws_bedrock_model_invocation_logging_configuration.content_off`, one per
-  Region: text, image, embedding and video delivery false, no S3 or CloudWatch
-  destination. The provider has no audio argument.
 - `aws_iam_role.breakglass`, named `breakglass_role_name`. Its trust allows
   `sts:AssumeRole` and `sts:SetSourceIdentity` from this account when three
   conditions hold:
@@ -37,6 +34,15 @@ apply order, the audio flag, the SCP and break-glass use.
   with `equals-ignore-case`, because IAM role names are unique regardless of case. The rule state is
   `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`, because CloudTrail records
   AssumeRole as a read-only event.
+
+The module creates no Bedrock model invocation logging configuration. With
+none, Bedrock stores no invocation content. AWS rejects a configuration with
+every content flag off and no S3 or CloudWatch destination (`ValidationException:
+At least one logging config must be specified`), so v1.5.0's content-off
+resource could not apply. The control is that no configuration exists: the
+SCP's `DenyLogControlTamper` stops any principal but the apply role from
+creating one, and the template README's "No invocation logging" check confirms
+it after each apply.
 
 ## Inputs
 
@@ -92,6 +98,7 @@ it in the `baseline-module-test` job of `.github/workflows/psd-ci.yml`. Its
 - Account-level policy syntax: https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data-accountlevel.html
 - Custom data identifiers: https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CWL-custom-data-identifiers.html
 - Bedrock `LoggingConfig`: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_LoggingConfig.html
+- Bedrock `GetModelInvocationLoggingConfiguration`: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_GetModelInvocationLoggingConfiguration.html
 - Source identity in trust policies: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_control-access_monitor.html
 - Read-only CloudTrail events in EventBridge: https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-service-event-cloudtrail-management.html
 - `equals-ignore-case` in event patterns: https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-create-pattern-operators.html
