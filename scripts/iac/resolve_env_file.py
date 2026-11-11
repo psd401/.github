@@ -10,7 +10,7 @@ Usage:
   resolve_env_file.py --env-file <decoded.env.yml> --github-env "$GITHUB_ENV"
       --platform proxmox --repo <repo>
   resolve_env_file.py --env-file <decoded.env.yml> --student-pii-out <path>/student-pii-account.json
-      --repo <repo>
+      --ses-out <path>/ses-from-addresses.json --repo <repo>
 
 aws:     writes backend.hcl (bucket = <state_bucket_prefix>-<account alias>-<region>,
          key = <repo>/<environment>/terraform.tfstate) and exports TF_VAR_repo,
@@ -29,6 +29,11 @@ proxmox: exports TF_VAR_/PKR_VAR_ pairs the proxmox-vm template's root module
          present is false when the env file has no cloud.aws.student_pii. It
          never carries a custom identifier regex or test string. May run alone
          or alongside a --platform mode.
+--ses-out: writes {"ses_from_addresses": {"present", "approved_from_addresses"}},
+         cloud.aws.ses.approved_from_addresses, for ses_send.rego's
+         ses:FromAddress check (standards/17-email-sending.md rules 3 and 9).
+         Always written; present is false and the list empty when the env file
+         has no cloud.aws.ses. May run alone or alongside the other modes.
 
 Never prints a resolved value: errors name the missing key only.
 """
@@ -162,6 +167,26 @@ def write_student_pii_account(env, out_path):
     print(f"wrote {out_path}.")
 
 
+def ses_from_addresses(env):
+    """cloud.aws.ses.approved_from_addresses for ses_send.rego; non-string entries dropped."""
+    aws = ((env.get("cloud") or {}).get("aws") or {}) if isinstance(env, dict) else {}
+    ses = aws.get("ses") if isinstance(aws, dict) else None
+    if not isinstance(ses, dict):
+        return {"present": False, "approved_from_addresses": []}
+    addrs = ses.get("approved_from_addresses")
+    return {
+        "present": True,
+        "approved_from_addresses": [x for x in addrs if isinstance(x, str)] if isinstance(addrs, list) else [],
+    }
+
+
+def write_ses_from_addresses(env, out_path):
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump({"ses_from_addresses": ses_from_addresses(env)}, f, indent=2)
+        f.write("\n")
+    print(f"wrote {out_path}.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env-file", required=True)
@@ -173,11 +198,12 @@ def main():
     ap.add_argument("--region", default="")
     ap.add_argument("--backend-out", default="backend.hcl")
     ap.add_argument("--student-pii-out")
+    ap.add_argument("--ses-out")
     a = ap.parse_args()
     if (a.github_env is None) != (a.platform is None):
         ap.error("--github-env and --platform go together.")
-    if a.platform is None and a.student_pii_out is None:
-        ap.error("give --github-env with --platform, --student-pii-out, or both.")
+    if a.platform is None and a.student_pii_out is None and a.ses_out is None:
+        ap.error("give --github-env with --platform, --student-pii-out, --ses-out, or any mix.")
 
     try:
         with open(a.env_file, encoding="utf-8") as f:
@@ -191,6 +217,8 @@ def main():
 
     if a.student_pii_out is not None:
         write_student_pii_account(env, a.student_pii_out)
+    if a.ses_out is not None:
+        write_ses_from_addresses(env, a.ses_out)
     if a.platform is None:
         return 0
 

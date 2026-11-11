@@ -31,12 +31,13 @@ conftest test tfplan.json \
   --policy policy/conftest/aws \
   --data exceptions.yml \
   --data student-pii-account.json \
+  --data ses-from-addresses.json \
   --data policy/data/telemetry-layers.yml \
   --all-namespaces
 ```
 
-(`--policy policy/conftest/gcp` for a GCP-platform repo, which needs neither
-of the last two `--data` files. `telemetry-layers.yml` is the dated list of
+(`--policy policy/conftest/gcp` for a GCP-platform repo, which needs none
+of the last three `--data` files. `telemetry-layers.yml` is the dated list of
 vendor Lambda layers that `student_pii_destinations.rego` reads as
 `data.telemetry_layers`. `exceptions.yml` is
 the consuming repo's own file at its root, schema in
@@ -45,7 +46,12 @@ standards 08-iac.md 'Exceptions file'.
 `student-pii-account.json` comes from `scripts/iac/resolve_env_file.py
 --student-pii-out` in the plan job: `cloud.aws.student_pii` from the
 environment file, which `account_controls.rego` and `unmask.rego` read as
-`data.student_pii_account`.)
+`data.student_pii_account`. `ses-from-addresses.json` comes from the same
+script's `--ses-out`: `cloud.aws.ses.approved_from_addresses` from the
+environment file, which `ses_send.rego` reads as `data.ses_from_addresses`.
+The workflow passes either file only when the plan artifact holds it; a
+missing file is then denied by the rule that needs it, not by a conftest
+loader error.)
 
 On-prem, against the compose project's resolved config, not a Terraform
 plan. `templates/onprem-app` keeps `docker-compose.yml` at the repo root
@@ -155,6 +161,9 @@ which share the fixture file with its deliberately expired entry, stay green.
 | aws | `student_pii_destinations.rego` | in a student-pii root, each log destination needs an exceptions.yml entry naming its exact address as scope and its kind as `destination.kind`. Kinds: subscription filter, log destination, account subscription policy, Firehose, log delivery, S3 export target, non-CloudWatch ECS log driver, vendor Lambda layer, OpenTelemetry exporter. An S3 export target is a bucket policy letting the logs service or any principal (`*`) write. An OpenTelemetry variable unknown at plan time counts, and so does an unknown ECS `container_definitions` (kind ecs-log-driver). The account subscription policy also counts in the account-baseline root. Bedrock logging to S3 is denied in a student-pii root or the account-baseline root. A student-pii app root may not hold a Bedrock logging configuration (08-iac.md#student-pii-log-destinations) |
 | aws | `account_controls.rego` | in the account-baseline root (`psd:root = account-baseline`), the data protection policy lists every identifier from `student-pii-account.json` in its Audit and Deidentify statements. A student-pii app root may not change the account policy (08-iac.md#student-pii-account-posture) |
 | aws | `unmask.rego` | only the break-glass role named in `student-pii-account.json` is granted `logs:Unmask`, through an inline role policy in the account-baseline root. In that root, the break-glass role's inline policies allow only `logs:Unmask`, and the only managed policy it may hold is `CloudWatchLogsReadOnlyAccess`. Its trust names only account root principals. Every Allow statement requires `ArnLike aws:PrincipalArn` on the IAM Identity Center role of the `breakglass_permission_set_name` permission set, a source identity and `aws:RequestedRegion`. A document or ARN unknown at plan time fails. Create, update and no-op changes count (08-iac.md#student-pii-account-posture) |
+| aws | `org_changes.rego` | no managed `aws_organizations_*` resource and no `aws_cloudtrail` with `is_organization_trail = true` created or updated outside psd-aws-infra, which is exempted by an `exceptions.yml` entry with standard `13-aws-accounts.md#org-level-changes`, scope `plan` (13-aws-accounts.md rule 15) |
+| aws | `ses_send.rego` | an IAM Allow statement granting an SES send action has no `Resource: "*"` or `NotResource`, pins `ses:FromAddress`, and pins only addresses in `data.ses_from_addresses` (the environment file's `cloud.aws.ses.approved_from_addresses`, compared lowercase); a statement that pins `ses:FromAddress` is denied when that data is missing or empty; policies the plan leaves unchanged are read from `prior_state`; no IAM attachment of an AWS managed policy in `ses_managed_send_policies.rego` (17-email-sending.md rules 3 and 9) |
+| aws | `ses_managed_send_policies.rego` | data only: the AWS managed policy ARNs that allow SES send on every resource, which `ses_send.rego` denies attaching (17-email-sending.md rule 9) |
 | gcp | `sa_keys.rego` | no `google_service_account_key` resources |
 | gcp | `deletion_policy.rego` | `deletion_policy = "PREVENT"` on `google_project`; `deletion_protection = true` on `google_sql_database_instance` |
 | onprem | `compose.rego` | pinned image tags (no `:latest`), `restart: unless-stopped` (one-shot carve-out below), container hardening (`cap_drop: [ALL]`, `no-new-privileges:true`, `read_only: true`, non-root numeric UID) on any service with published ports |
@@ -220,3 +229,43 @@ dependency anything waits on); anything else needs an active, unexpired
   and confine Unmask to the break-glass role.
 - Account policy types other than data protection and subscription filter,
   such as TRANSFORMER_POLICY, are not checked.
+- `ses_send.rego` reads an IAM policy only when its JSON is known. A
+  `policy` that is unknown until apply (for example one that interpolates an
+  ARN created in the same plan) is skipped with a `warn`, which does not fail
+  the job, on the plan that creates or changes it; the next plan reads the
+  applied JSON from `prior_state` and denies it then, so a bad policy can be
+  applied once before it is caught. It reads `aws_iam_policy`,
+  `aws_iam_role_policy`, `aws_iam_user_policy`, `aws_iam_group_policy` and
+  `aws_iam_role`'s `inline_policy`, and the managed policy ARNs in every IAM
+  attachment form. Not read: customer managed policies defined outside the
+  repo and attached by ARN, SSO permission sets (`aws_ssoadmin_*`, where the
+  org admin permission sets live), resource policies, and CDK stacks. An
+  attachment whose policy ARN is unknown until apply gets a `warn`, like an
+  unknown document, and is denied on the next plan from `prior_state`. On
+  `aws_iam_role`, `inline_policy` and `managed_policy_arns` are computed and
+  planned wholly unknown on every new role, so only an unknown block or list
+  element warns; a wholly unknown attribute is caught on the next plan.
+- `ses_send.rego`'s `prior_state` read works in CI because
+  `scripts/iac/redact_plan.py` keeps a cut-down `prior_state` in the uploaded
+  plan JSON: managed IAM policy, role and attachment resources only, with
+  address, mode, type, name and their `policy`, `policy_arn`, `policy_arns`,
+  `managed_policy_arns` and `inline_policy` (name and policy) values. A new
+  attribute or resource type the rule reads must be added to the redactor's
+  `IAM_STATE_TYPES` / `IAM_STATE_ATTRS` too.
+- `ses_send.rego`'s approved From list is kept by hand in each district's
+  environment file (`cloud.aws.ses.approved_from_addresses`). A new app mail
+  group or alias needs an environment-file change before its app's send
+  policy passes. An entry holding `*` or `?` is dropped by the rule and
+  rejected by the schema, since it would approve a `StringLike` pin of the
+  same pattern.
+- `ses_managed_send_policies.rego` lists the AWS managed policies that allow
+  SES send on every resource, from a scan of all of them on 2026-11-09 (the
+  internal psd-dev-standards repo,
+  audit/aws-managed-ses-send-policies-2026-11-09.md). A policy AWS adds or
+  widens later is missed until the list is updated.
+- `org_changes.rego` exempts psd-aws-infra through its own `exceptions.yml`
+  entry (standard `13-aws-accounts.md#org-level-changes`, scope `plan`), but
+  each repo supplies its own `exceptions.yml`, and neither Rego nor
+  `check_exceptions.py` knows which repo it is. An app repo that adds the same
+  entry turns the rule off for itself; only review of that repo's
+  `exceptions.yml` catches it.

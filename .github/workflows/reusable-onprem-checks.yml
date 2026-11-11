@@ -566,8 +566,9 @@ jobs:
         # this job: the artifact is readable by anyone with repo read access,
         # and conftest never needs the secret itself. scripts/iac/redact_plan.py
         # masks resource_changes, resource_drift, planned_values,
-        # output_changes and configuration literals, and drops prior_state
-        # and variables (tested in scripts/iac/test_redact_plan.py).
+        # output_changes and configuration literals, drops variables, and
+        # cuts prior_state to AWS IAM policy and attachment attributes (none
+        # in an on-prem plan; tested in scripts/iac/test_redact_plan.py).
         run: |
           terraform show -json tfplan > tfplan.raw.json
           python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/redact_plan.py" tfplan.raw.json tfplan.json
