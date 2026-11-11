@@ -215,7 +215,7 @@
                 "breakglass_role_name": {
                   "type": "string",
                   "pattern": "^[A-Za-z0-9+=,.@_-]{1,64}$",
-                  "description": "IAM role name of the break-glass role, the only principal allowed to unmask student-pii log data. The deploy-role boundary carves it out by this name.",
+                  "description": "IAM role name of the break-glass role, the only principal allowed to unmask student-pii log data. The account-baseline apply-role boundary and the SCP name it. The app deploy-role boundary has no carve-out for it.",
                   "examples": ["<breakglass-role-name>"]
                 },
                 "breakglass_permission_set_name": {
@@ -274,6 +274,22 @@
                       }
                     }
                   }
+                }
+              }
+            },
+            "ses": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["approved_from_addresses"],
+              "description": "SES sending controls (17-email-sending.md rules 3 and 9). approved_from_addresses, reduced by scripts/iac/resolve_env_file.py --ses-out, is the list the ses_send conftest rule compares each IAM ses:FromAddress pin against. Optional: a district with no app sending through SES omits it, and a plan that pins ses:FromAddress is then denied.",
+              "properties": {
+                "approved_from_addresses": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "pattern": "^[^\\s@*?]+@[^\\s@*?]+$" },
+                  "description": "From addresses an app may send as: app mail groups and their aliases. Compared case-insensitively. No * or ? wildcards, since the rule compares pins to entries as literals.",
+                  "examples": [["<app-mail-group>@<district-domain>"]]
                 }
               }
             }
