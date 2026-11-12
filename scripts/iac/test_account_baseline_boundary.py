@@ -1,9 +1,10 @@
 # ABOUTME: Static checks on the account-baseline apply-role boundary template: it allows exactly the
 # ABOUTME: log-control writes the app boundary denies, never logs:Unmask, and renders to valid JSON.
-"""The account baseline root owns the account data protection policy and the
-Bedrock logging configuration (08-iac.md, Student PII account posture). Its
-apply role runs under templates/account-baseline/boundary/, not the app
-deploy-role boundary, which denies those writes with no carve-out."""
+"""The account baseline root owns the account data protection policy and keeps
+the account free of a Bedrock logging configuration (08-iac.md, Student PII
+account posture). Its apply role runs under templates/account-baseline/boundary/,
+not the app deploy-role boundary, which denies those writes with no carve-out.
+The apply role may delete a Bedrock logging configuration but never put one."""
 import fnmatch
 import json
 import re
@@ -20,7 +21,6 @@ APP_STUDENT_PII_DENIES = ("DenyLogsUnmask", "DenyAccountLogPolicy", "DenyBedrock
 BASELINE_WRITES = {
     "logs:PutAccountPolicy",
     "logs:DeleteAccountPolicy",
-    "bedrock:PutModelInvocationLoggingConfiguration",
     "bedrock:DeleteModelInvocationLoggingConfiguration",
 }
 
@@ -57,6 +57,11 @@ def test_allows_exactly_the_log_control_writes_the_app_boundary_denies():
     assert BASELINE_WRITES <= app_denied, f"the app boundary no longer denies {BASELINE_WRITES - app_denied}"
     granted = {a for a in app_denied if allowed(statements(), a)}
     assert granted == BASELINE_WRITES
+
+
+def test_apply_role_cannot_create_a_bedrock_logging_configuration():
+    assert not allowed(statements(), "bedrock:PutModelInvocationLoggingConfiguration")
+    assert allowed(statements(), "bedrock:GetModelInvocationLoggingConfiguration")
 
 
 def test_apply_role_can_neither_unmask_nor_assume_the_break_glass_role():

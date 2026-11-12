@@ -7,7 +7,7 @@ Apply this root once per AWS account that runs student-pii workloads. It calls
 | Control | Resource | Checked at plan time by |
 | --- | --- | --- |
 | Account data protection policy, scope ALL, one per Region in `cloud.aws.student_pii.regions` | `aws_cloudwatch_log_account_policy.data_protection` | `account_controls.rego` |
-| Bedrock invocation logging with text, image, embedding and video delivery off, no S3 or CloudWatch destination | `aws_bedrock_model_invocation_logging_configuration.content_off` | `student_pii_logs.rego`, `student_pii_destinations.rego` (audio needs a CLI step, see "Audio flag") |
+| No Bedrock model invocation logging configuration in any Region, so no invocation content is stored | none (the module creates none) | `student_pii_destinations.rego` denies one in this root or an app root. After each apply, the "No invocation logging" check confirms none exists |
 | Break-glass role, the only principal allowed `logs:Unmask`, trust gated on the break-glass permission set and a source identity | `aws_iam_role.breakglass` | `unmask.rego` |
 | EventBridge rule that sends every AssumeRole of the break-glass role to the alerts topic | `aws_cloudwatch_event_rule.breakglass_assumed` | none |
 | SCP document for `guardrail_mode: organization` (output `scp_json`, never applied here) | output only | none |
@@ -71,26 +71,52 @@ Apply in nonprod first, then in prod. In each account:
 
 1. Open a pull request. The plan job plans this root with the plan role.
 2. Review the plan. Apply behind the GitHub environment's protection rule.
-3. Set the audio flag in every listed Region (see "Audio flag").
+3. Run the "No invocation logging" check in every listed Region.
 4. If `guardrail_mode` is `organization`, attach the SCP (see "SCP").
 5. Plan a student-pii workload in the same account.
 
 Nothing stops a student-pii app root from planning before step 1. Apply this
 root first: until then the account has no masking and no break-glass role.
 
-## Audio flag
+## No invocation logging
 
-hashicorp/aws 6.68.0 (the locked version) and 6.70.0 have no argument for
-`audioDataDeliveryEnabled`, so no plan-time check sees it. After each apply that creates or changes the Bedrock configuration,
-the apply role sets all five flags in each Region:
+The account keeps no Bedrock model invocation logging configuration. Without
+one, Bedrock stores no prompt, response, image, embedding, video or audio
+content. The baseline cannot write a content-off configuration instead:
+`PutModelInvocationLoggingConfiguration` with every flag false and no S3 or
+CloudWatch destination fails with `ValidationException: At least one logging
+config must be specified` (psd401's first apply, 2026-11-10). v1.5.0 of the
+module tried that and failed in both Regions.
+
+After each apply, check every Region in `cloud.aws.student_pii.regions` with
+any role that has `bedrock:GetModelInvocationLoggingConfiguration` (the plan
+role has it, see "Plan role reads"). The response must have no `loggingConfig`:
 
 ```sh
-aws bedrock put-model-invocation-logging-configuration --region us-west-2 \
-  --logging-config '{"textDataDeliveryEnabled":false,"imageDataDeliveryEnabled":false,"embeddingDataDeliveryEnabled":false,"videoDataDeliveryEnabled":false,"audioDataDeliveryEnabled":false}'
+set -eu
+for region in us-west-2 us-east-1; do  # the Regions in cloud.aws.student_pii.regions
+  response=$(aws bedrock get-model-invocation-logging-configuration --region "$region" --output json)
+  if ! printf '%s' "$response" | jq -e '.loggingConfig == null' > /dev/null; then
+    echo "Bedrock model invocation logging is configured in $region; a student-pii account keeps none" >&2
+    exit 1
+  fi
+done
 ```
 
-Repeat for each Region in `cloud.aws.student_pii.regions`. In organization mode
-the SCP allows this call only from the apply role.
+`set -e` stops the loop if the call itself fails, for example on
+`AccessDeniedException`, so a failed read never passes as "no configuration".
+
+If the check fails, someone created a configuration outside this root. Find
+who in CloudTrail (`PutModelInvocationLoggingConfiguration`), then remove it
+with the apply role, the only role the SCP lets call
+`bedrock:DeleteModelInvocationLoggingConfiguration`:
+
+```sh
+aws bedrock delete-model-invocation-logging-configuration --region <region>
+```
+
+In `standalone` mode, or before the SCP is attached, any account admin can
+create a configuration. This check is the only thing that finds it.
 
 ## SCP
 
@@ -123,7 +149,8 @@ exempted roles must exist first.
 To refresh this root, the plan role needs:
 
 - `sts:GetCallerIdentity`, `sns:ListTopics`, `sns:GetTopicAttributes`, `sns:ListTagsForResource`
-- `logs:DescribeAccountPolicies` and `logs:GetDataProtectionPolicy` (without it, `DescribeAccountPolicies` omits data protection policies), `bedrock:GetModelInvocationLoggingConfiguration`
+- `logs:DescribeAccountPolicies` and `logs:GetDataProtectionPolicy` (without it, `DescribeAccountPolicies` omits data protection policies)
+- `bedrock:GetModelInvocationLoggingConfiguration`, for the "No invocation logging" check. Terraform does not read it, since the root manages no configuration
 - `iam:GetRole`, `iam:GetRolePolicy`, `iam:ListRolePolicies`, `iam:ListAttachedRolePolicies` on the break-glass role
 - `events:DescribeRule`, `events:ListTargetsByRule`, `events:ListTagsForResource` on the alert rule
 - `s3:GetObject` and `s3:ListBucket` on the state bucket and key
@@ -176,6 +203,8 @@ It sets the ticket id as the source identity, which the alert triage matches.
 - The break-glass path depends on Identity Center. During an Identity Center outage, no one can
   unmask. PSD creates no IAM users (08-iac.md, AWS org boundary), so this is accepted.
 - Nothing schedules the quarterly drill or checks that it ran.
+- Nothing runs the "No invocation logging" check between applies. A configuration created by the
+  apply role, or by anyone in `standalone` mode, stays until the next check.
 - Nothing checks that CloudTrail also delivers to a central archive outside this account.
 
 ## Validate locally

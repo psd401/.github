@@ -1,5 +1,5 @@
 # ABOUTME: Tests for student_pii_destinations.rego: each log destination kind in a student-pii root
-# ABOUTME: denies without an exact-scope exception, Bedrock S3 and app-root Bedrock logging deny outright.
+# ABOUTME: denies without an exact-scope exception, Bedrock S3 and any Bedrock logging config deny outright.
 package aws
 
 # Fixtures (policy/conftest/fixtures/aws/dest_*.json): dest_plan_pii holds one
@@ -141,27 +141,29 @@ test_dest_bedrock_config_in_a_student_pii_app_root_denied_even_with_an_exception
 		with data.telemetry_layers as data.dest_telemetry_layers
 		with data.exceptions as [dt_entry(dt_rule, "aws_bedrock_model_invocation_logging_configuration.this", "bedrock-s3")]
 	some msg in denies
-	startswith(msg, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root, the Bedrock invocation logging configuration belongs to the account-baseline root")
+	startswith(msg, "aws_bedrock_model_invocation_logging_configuration.this: student-pii root, a student-pii account keeps no Bedrock model invocation logging configuration")
 }
 
 # One resource tagged psd:root = account-baseline does not make a student-pii
-# app root the baseline root, so it still may not own Bedrock logging.
+# app root the baseline root, so its Bedrock logging deny names a student-pii
+# root.
 test_dest_bedrock_config_in_an_app_root_with_one_root_tagged_resource_denied if {
 	some bedrock in data.dest_plan_baseline.resource_changes
 	bedrock.type == "aws_bedrock_model_invocation_logging_configuration"
 	denies := dt_denies with input as acct_plan([pii_marker, acct_baseline_marker, bedrock])
-	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root, the Bedrock invocation logging configuration belongs to the account-baseline root")
+	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii root, a student-pii account keeps no Bedrock model invocation logging configuration")
+	not dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root")
 }
 
-test_dest_baseline_root_owns_bedrock_logging_but_not_its_s3_delivery if {
+test_dest_baseline_root_bedrock_logging_and_its_s3_delivery_denied if {
 	denies := dt_denies with input as data.dest_plan_baseline
-	not dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root")
-	some msg in denies
-	startswith(msg, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root, Bedrock invocation logging writes to S3 through cloudwatch_config.large_data_delivery_s3_config (destination kind bedrock-s3)")
+	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root, a student-pii account keeps no Bedrock model invocation logging configuration")
+	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root, Bedrock invocation logging writes to S3 through cloudwatch_config.large_data_delivery_s3_config (destination kind bedrock-s3)")
+	not dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii root")
 }
 
-# A student-pii root that puts the root tag on every resource stays an app
-# root, so it still may not own Bedrock logging.
+# A student-pii root that puts the root tag on every resource stays a
+# student-pii root, so its Bedrock logging deny names a student-pii root.
 test_dest_bedrock_config_in_a_student_pii_root_tagged_on_every_resource_denied if {
 	plan := json.patch(data.dest_plan_baseline, [{
 		"op": "replace",
@@ -169,7 +171,8 @@ test_dest_bedrock_config_in_a_student_pii_root_tagged_on_every_resource_denied i
 		"value": "student-pii",
 	}])
 	denies := dt_denies with input as plan
-	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii app root, the Bedrock invocation logging configuration belongs to the account-baseline root")
+	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: student-pii root, a student-pii account keeps no Bedrock model invocation logging configuration")
+	not dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root")
 }
 
 test_dest_internal_root_unaffected if {
@@ -180,18 +183,36 @@ test_dest_internal_root_unaffected if {
 }
 
 # The account-baseline root is not tagged student-pii (account_controls.rego),
-# yet it owns the account's one Bedrock invocation logging configuration.
-test_dest_untagged_baseline_root_bedrock_s3_delivery_denied if {
-	plan := json.patch(data.acct_plan_baseline, [{
-		"op": "replace",
-		"path": "/resource_changes/0/change/after/logging_config/0/s3_config",
-		"value": [{"bucket_name": "district-bedrock-logs", "key_prefix": ""}],
-	}])
-	denies := dt_denies with input as plan
-	some msg in denies
-	startswith(msg, "aws_bedrock_model_invocation_logging_configuration.this: ")
-	contains(msg, "through s3_config (destination kind bedrock-s3)")
+# and the account keeps no Bedrock invocation logging configuration, not even
+# one with every content flag off and no destination, which AWS rejects anyway.
+dt_baseline_bedrock(lc) := json.patch(data.acct_plan_baseline, [{"op": "add", "path": "/resource_changes/-", "value": {
+	"address": "aws_bedrock_model_invocation_logging_configuration.this",
+	"type": "aws_bedrock_model_invocation_logging_configuration",
+	"change": {"actions": ["create"], "before": null, "after_unknown": {}, "after": {"region": "us-west-2", "logging_config": [lc]}},
+}}])
+
+dt_content_off := {
+	"text_data_delivery_enabled": false, "image_data_delivery_enabled": false,
+	"embedding_data_delivery_enabled": false, "video_data_delivery_enabled": false,
+	"s3_config": [], "cloudwatch_config": [],
+}
+
+test_dest_untagged_baseline_root_bedrock_logging_denied if {
 	count(dt_denies) == 0 with input as data.acct_plan_baseline
+	denies := dt_denies with input as dt_baseline_bedrock(dt_content_off)
+	count(denies) == 1
+	dt_starts(denies, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root, a student-pii account keeps no Bedrock model invocation logging configuration")
+	count(dt_denies) == 1 with input as dt_baseline_bedrock(dt_content_off)
+		with data.exceptions as [dt_entry(dt_rule, "aws_bedrock_model_invocation_logging_configuration.this", "bedrock-s3")]
+}
+
+test_dest_untagged_baseline_root_bedrock_s3_delivery_denied if {
+	lc := object.union(dt_content_off, {"s3_config": [{"bucket_name": "district-bedrock-logs", "key_prefix": ""}]})
+	denies := dt_denies with input as dt_baseline_bedrock(lc)
+	count(denies) == 2
+	some msg in denies
+	startswith(msg, "aws_bedrock_model_invocation_logging_configuration.this: account-baseline root, ")
+	contains(msg, "through s3_config (destination kind bedrock-s3)")
 }
 
 # terraform show -json leaves a value unknown at plan time out of after and
