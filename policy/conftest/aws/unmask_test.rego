@@ -39,6 +39,16 @@ test_app_root_unmask_grant_denied if {
 	startswith(m, "aws_iam_role_policy.grant: student-pii app root, an inline policy on role app-runtime grants logs:Unmask")
 }
 
+# One resource tagged psd:root = account-baseline does not make a student-pii
+# app root the baseline root, so the app-root Unmask deny still fires.
+test_app_root_with_one_root_tagged_resource_unmask_grant_denied if {
+	rc := unmask_role_policy("app-runtime", unmask_allow("logs:Unmask"))
+	findings := unmask_findings(deny) with input as acct_plan([pii_marker, acct_baseline_marker, rc])
+	count(findings) == 1
+	some m in findings
+	startswith(m, "aws_iam_role_policy.grant: student-pii app root, an inline policy on role app-runtime grants logs:Unmask")
+}
+
 test_app_root_wildcards_that_cover_unmask_denied if {
 	every action in ["logs:*", "logs:Un*", "*", "LOGS:UNMASK", "logs:Unmas?", ["s3:GetObject", "*:Unmask"]] {
 		count(unmask_app_findings(unmask_role_policy("app-runtime", unmask_allow(action)))) == 1

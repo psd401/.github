@@ -12,9 +12,15 @@ Apply this root once per AWS account that runs student-pii workloads. It calls
 | EventBridge rule that sends every AssumeRole of the break-glass role to the alerts topic | `aws_cloudwatch_event_rule.breakglass_assumed` | none |
 | SCP document for `guardrail_mode: organization` (output `scp_json`, never applied here) | output only | none |
 
-The provider's `default_tags` carry `psd:root = account-baseline`. The conftest
-rules in `policy/conftest/aws/` use that tag to tell this root from a
-student-pii app root, which may not touch these controls.
+The provider's `default_tags` carry `psd:root = account-baseline`, so every
+resource with `tags_all` carries it. The conftest rules in
+`policy/conftest/aws/` treat a plan as this root only when every such resource
+carries the tag, which tells this root from a student-pii app root, which may
+not touch these controls. Keep the tag in `default_tags`, not on single
+resources, and keep its value known at plan time. Tag nothing in this root
+`psd:data-classification = student-pii`. A plan that carries the tag on some
+resources only, or with an unknown value, or beside a student-pii resource,
+is not treated as this root and is denied.
 
 ## Names
 
