@@ -24,7 +24,14 @@ carry a value is masked with the sensitivity map Terraform emits next to it:
   declares the variable sensitive or the name is secret-shaped
 - configuration.provider_config: constant_value masked for secret-shaped
   attribute names (provider schemas carry no sensitivity map in plan JSON)
-- prior_state and variables are dropped outright
+- variables are dropped outright
+- prior_state is cut to what policy/conftest/aws/ses_send.rego reads for
+  resources a plan leaves unchanged (17-email-sending.md rule 9): managed
+  IAM policy, role and attachment resources only (IAM_STATE_TYPES), each
+  with address, mode, type, name and the IAM_STATE_ATTRS values, masked by
+  its sensitive_values first; every other resource and attribute is dropped.
+  Policy JSON and policy ARNs are not secrets. ARNs carry account IDs, which
+  resource_changes and planned_values already carry unmasked.
 """
 import json
 import re
@@ -32,6 +39,26 @@ import sys
 
 SECRET_NAMES = ("password", "passwd", "secret", "token", "credential", "private_key", "access_key", "api_key")
 INSTANCE_KEY = re.compile(r'\[[^\]]*\]')
+
+# What ses_send.rego reads from prior_state. Keep the two lists in step with
+# iam_policy_types, attached_policy_arns and the aws_iam_role inline_policy
+# read there.
+IAM_STATE_TYPES = frozenset({
+    "aws_iam_policy",
+    "aws_iam_role_policy",
+    "aws_iam_user_policy",
+    "aws_iam_group_policy",
+    "aws_iam_role",
+    "aws_iam_role_policy_attachment",
+    "aws_iam_user_policy_attachment",
+    "aws_iam_group_policy_attachment",
+    "aws_iam_policy_attachment",
+    "aws_iam_role_policy_attachments_exclusive",
+    "aws_iam_user_policy_attachments_exclusive",
+    "aws_iam_group_policy_attachments_exclusive",
+})
+IAM_STATE_ATTRS = ("policy", "policy_arn", "policy_arns", "managed_policy_arns", "inline_policy")
+INLINE_POLICY_ATTRS = ("name", "policy")
 
 
 def secret_shaped(name):
@@ -81,6 +108,41 @@ def redact_module(module, sensitivity_by_address):
             res["values"] = redact(res["values"], sens)
     for child in module.get("child_modules", []):
         redact_module(child, sensitivity_by_address)
+
+
+def iam_state_module(module):
+    """Copy of a prior_state module holding only the IAM resources and
+    attributes ses_send.rego reads, recursing into child_modules."""
+    out = {}
+    if "address" in module:
+        out["address"] = module["address"]
+    resources = []
+    for res in module.get("resources", []):
+        if res.get("mode") != "managed" or res.get("type") not in IAM_STATE_TYPES:
+            continue
+        values = redact(res.get("values") or {}, res.get("sensitive_values", {}))
+        kept = {k: values[k] for k in IAM_STATE_ATTRS if k in values}
+        if isinstance(kept.get("inline_policy"), list):
+            kept["inline_policy"] = [
+                {k: block[k] for k in INLINE_POLICY_ATTRS if k in block}
+                for block in kept["inline_policy"] if isinstance(block, dict)]
+        resources.append({k: res[k] for k in ("address", "mode", "type", "name") if k in res}
+                         | {"values": kept})
+    if resources:
+        out["resources"] = resources
+    children = [iam_state_module(c) for c in module.get("child_modules", [])]
+    children = [c for c in children if c.get("resources") or c.get("child_modules")]
+    if children:
+        out["child_modules"] = children
+    return out
+
+
+def iam_prior_state(prior_state):
+    values = prior_state.get("values")
+    root = values.get("root_module") if isinstance(values, dict) else None
+    if not isinstance(root, dict):
+        root = {}
+    return {"values": {"root_module": iam_state_module(root)}}
 
 
 def redact_expressions(expressions, sensitive):
@@ -154,7 +216,10 @@ def main(raw_path, out_path):
     redact_config_module(config.get("root_module", {}), sensitivity_by_address)
     redact_provider_config(config.get("provider_config", {}))
 
-    plan.pop("prior_state", None)
+    if isinstance(plan.get("prior_state"), dict):
+        plan["prior_state"] = iam_prior_state(plan["prior_state"])
+    else:
+        plan.pop("prior_state", None)
     plan.pop("variables", None)
 
     with open(out_path, "w", encoding="utf-8") as f:

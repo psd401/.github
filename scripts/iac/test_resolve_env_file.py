@@ -2,7 +2,8 @@
 # ABOUTME: decoded environment file, without printing a value.
 """Tests for resolve_env_file.py: turn the decoded private environment file
 into backend.hcl and TF_VAR_/PKR_VAR_ exports for one plan/apply job, without
-printing a value, and reduce cloud.aws.student_pii to student-pii-account.json."""
+printing a value, and reduce cloud.aws.student_pii to student-pii-account.json and
+cloud.aws.ses to ses-from-addresses.json."""
 import json
 import subprocess
 import sys
@@ -226,3 +227,82 @@ def test_aws_exports_student_pii_trimmed_to_what_the_account_baseline_root_reads
 
 def test_aws_exports_no_student_pii_without_cloud_aws_student_pii(tmp_path):
     assert "TF_VAR_student_pii" not in aws_exports(tmp_path, ENV)
+
+
+SES_FIXTURE = HERE.parents[1] / "policy" / "conftest" / "fixtures" / "aws" / "ses_env_from_addresses.json"
+
+
+def run_ses(tmp_path, env_file=PII_ENV):
+    """--ses-out alone, without --github-env or --platform."""
+    out = tmp_path / "ses-from-addresses.json"
+    r = subprocess.run([sys.executable, str(SCRIPT), "--env-file", str(env_file),
+                        "--ses-out", str(out), "--repo", "sis-sync"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    return r, json.loads(out.read_text())["ses_from_addresses"]
+
+
+def test_ses_out_carries_the_approved_list_the_rego_compares_against(tmp_path):
+    """ses_send.rego reads data.ses_from_addresses. The rego tests bind the same
+    fixture, so the two cannot drift apart."""
+    expected = json.loads(SES_FIXTURE.read_text())["ses_env_from_addresses"]
+    assert run_ses(tmp_path)[1] == expected
+
+
+def test_ses_out_without_cloud_aws_ses_is_present_false(tmp_path):
+    assert run_ses(tmp_path, ENV)[1] == {"present": False, "approved_from_addresses": []}
+
+
+@pytest.mark.parametrize("ses_block, expected", [
+    ("{}", []),
+    ("{approved_from_addresses: app-alerts@<district-domain>}", []),
+    ("{approved_from_addresses: [7, app-alerts@<district-domain>, null]}", ["app-alerts@<district-domain>"]),
+])
+def test_ses_out_with_a_malformed_ses_block_keeps_only_string_entries(tmp_path, ses_block, expected):
+    """The resolver does not validate against the schema. An ses block with no
+    list, a value that is not a list, or entries that are not strings comes out
+    present with only the string entries, and ses_send.rego denies a pinned
+    statement when that list is empty."""
+    env = tmp_path / "env.yml"
+    env.write_text(f"cloud:\n  aws:\n    ses: {ses_block}\n")
+    assert run_ses(tmp_path, env)[1] == {"present": True, "approved_from_addresses": expected}
+
+
+def test_ses_out_never_prints_an_address(tmp_path):
+    r, _ = run_ses(tmp_path)
+    for addr in yaml.safe_load(PII_ENV.read_text())["cloud"]["aws"]["ses"]["approved_from_addresses"]:
+        assert addr not in r.stdout + r.stderr
+
+
+def test_ses_out_runs_alongside_a_platform_and_the_student_pii_file(tmp_path):
+    github_env = tmp_path / "github_env"
+    github_env.write_text("")
+    ses, pii = tmp_path / "ses-from-addresses.json", tmp_path / "student-pii-account.json"
+    r = subprocess.run([sys.executable, str(SCRIPT), "--env-file", str(PII_ENV),
+                        "--github-env", str(github_env), "--platform", "aws",
+                        "--environment", "dev", "--account-alias", "nonprod", "--repo", "sis-sync",
+                        "--region", "us-west-2", "--backend-out", str(tmp_path / "b.hcl"),
+                        "--student-pii-out", str(pii), "--ses-out", str(ses)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(ses.read_text())["ses_from_addresses"]["present"] is True
+    assert json.loads(pii.read_text())["student_pii_account"]["present"] is True
+    assert "TF_VAR_repo=sis-sync\n" in github_env.read_text()
+    assert "@<district-domain>" not in github_env.read_text()
+
+
+def test_needs_an_output_names_ses_out(tmp_path):
+    r = subprocess.run([sys.executable, str(SCRIPT), "--env-file", str(PII_ENV),
+                        "--repo", "sis-sync"], capture_output=True, text=True)
+    assert r.returncode == 2
+    assert "--ses-out" in r.stderr
+
+
+def test_malformed_yaml_writes_no_ses_file(tmp_path):
+    bad = tmp_path / "bad.env.yml"
+    bad.write_text("cloud:\n  aws: [\n")
+    r = subprocess.run([sys.executable, str(SCRIPT), "--env-file", str(bad),
+                        "--ses-out", str(tmp_path / "s.json"), "--repo", "sis-sync"],
+                       capture_output=True, text=True)
+    assert r.returncode == 1
+    assert not (tmp_path / "s.json").exists()

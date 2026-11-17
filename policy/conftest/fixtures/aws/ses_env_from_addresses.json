@@ -1,0 +1,11 @@
+{
+  "ses_env_from_addresses": {
+    "present": true,
+    "approved_from_addresses": [
+      "app-alerts@<district-domain>",
+      "app-alarms@<district-domain>",
+      "app-verification@<district-domain>",
+      "team-alerts@<district-domain>"
+    ]
+  }
+}

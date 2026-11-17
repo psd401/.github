@@ -17,8 +17,8 @@ covers:
 A delete with no replacement (change.after is null) is not a downgrade.
 
 Reads change.before, never prior_state: the plan is redact_plan.py output,
-which drops prior_state and keeps tags, since no provider marks them
-sensitive.
+which cuts prior_state to IAM policy and attachment attributes and keeps
+tags in resource_changes, since no provider marks them sensitive.
 
 An entry waives one downgrade when its standard is
 08-iac.md#student-pii-downgrade, its scope equals the resource address, and

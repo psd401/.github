@@ -101,7 +101,7 @@ jobs:
     name: env-file-check
     # Fully qualified: a `./` path inside a reusable workflow resolves against
     # the caller's repository, where this file does not exist.
-    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@0ecfe7112d6d35e0d50b0a563933413aedcac1c3 # v1.4.0
+    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@ad250c64abde0502dfdf22ab7bd861251032f804 # v1.6.0
     secrets:
       PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
 
@@ -568,8 +568,9 @@ jobs:
         # this job: the artifact is readable by anyone with repo read access,
         # and conftest never needs the secret itself. scripts/iac/redact_plan.py
         # masks resource_changes, resource_drift, planned_values,
-        # output_changes and configuration literals, and drops prior_state
-        # and variables (tested in scripts/iac/test_redact_plan.py).
+        # output_changes and configuration literals, drops variables, and
+        # cuts prior_state to AWS IAM policy and attachment attributes (none
+        # in an on-prem plan; tested in scripts/iac/test_redact_plan.py).
         run: |
           terraform show -json tfplan > tfplan.raw.json
           python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/redact_plan.py" tfplan.raw.json tfplan.json
