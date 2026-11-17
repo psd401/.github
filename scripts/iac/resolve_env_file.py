@@ -35,7 +35,10 @@ proxmox: exports TF_VAR_/PKR_VAR_ pairs the proxmox-vm template's root module
          Always written; present is false and the list empty when the env file
          has no cloud.aws.ses. May run alone or alongside the other modes.
 
-Never prints a resolved value: errors name the missing key only.
+Never prints a resolved value: errors name the missing key only. Every value
+written to --github-env still shows in the env: block of each later step's
+log in the caller repo, including TF_VAR_student_pii with the custom
+identifier regexes.
 """
 import argparse
 import json

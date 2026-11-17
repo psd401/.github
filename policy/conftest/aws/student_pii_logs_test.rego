@@ -25,7 +25,7 @@ log_group(after, after_unknown) := {
 plan(rcs) := {"configuration": {"provider_config": {}}, "resource_changes": rcs}
 
 # Every deny except student_pii_destinations.rego's, which denies any Bedrock
-# logging configuration in a student-pii app root. The Bedrock pass tests below
+# logging configuration in a student-pii or account-baseline root. The Bedrock pass tests below
 # check the log rules alone.
 log_denies := {msg |
 	some msg in deny
@@ -151,8 +151,7 @@ test_pii_prefix_scoped_exception_does_not_waive_a_longer_address if {
 }
 
 # Content-delivery flags beyond text. hashicorp/aws v6.70.0 plans each unset
-# flag as true, so a real plan shows all four. It has no audio argument, so no
-# plan check sees audio.
+# flag as true, so a real plan shows all four. It has no audio argument.
 bedrock_flag_all_off := {
 	"text_data_delivery_enabled": false, "image_data_delivery_enabled": false,
 	"embedding_data_delivery_enabled": false, "video_data_delivery_enabled": false,
@@ -186,15 +185,14 @@ test_pii_bedrock_with_every_flag_off_passes if {
 	count(log_denies) == 0 with input as plan([pii_marker, bedrock_logging(bedrock_flag_all_off)])
 }
 
-test_baseline_bedrock_any_flag_on_denied if {
-	every flag in object.keys(bedrock_flag_all_off) {
-		lc := object.union(bedrock_flag_all_off, {flag: true})
-		findings := bedrock_flag_findings(deny) with input as plan([acct_baseline_marker, bedrock_logging(lc)])
-			with data.student_pii_account as data.acct_student_pii_account
-		count(findings) == 1
-		some m in findings
-		contains(m, sprintf("%s true", [flag]))
-	}
+# The account-baseline root keeps no Bedrock logging configuration at all.
+# student_pii_destinations.rego denies one there outright, so the flag rule
+# does not report it a second time.
+test_baseline_bedrock_flags_on_left_to_the_destinations_rule if {
+	lc := object.union(bedrock_flag_all_off, {"image_data_delivery_enabled": true})
+	findings := bedrock_flag_findings(deny) with input as plan([acct_baseline_marker, bedrock_logging(lc)])
+		with data.student_pii_account as data.acct_student_pii_account
+	count(findings) == 0
 }
 
 test_bedrock_flag_finding_waived_by_an_exact_entry if {
@@ -206,22 +204,21 @@ test_bedrock_flag_finding_waived_by_an_exact_entry if {
 
 no_op(rc) := json.patch(rc, [{"op": "replace", "path": "/change/actions", "value": ["no-op"]}])
 
-test_baseline_bedrock_no_op_with_flags_on_denied if {
+# The text rule reports text delivery; the flag rule reports the other three.
+test_pii_bedrock_no_op_with_flags_on_denied if {
 	lc := {"text_data_delivery_enabled": true, "image_data_delivery_enabled": true, "embedding_data_delivery_enabled": true, "video_data_delivery_enabled": true}
-	findings := bedrock_flag_findings(deny) with input as plan([acct_baseline_marker, no_op(bedrock_logging(lc))])
-		with data.student_pii_account as data.acct_student_pii_account
-	count(findings) == 1
+	findings := bedrock_flag_findings(deny) with input as plan([pii_marker, no_op(bedrock_logging(lc))])
+	count(findings) == 2
 	some m in findings
-	contains(m, "(embedding_data_delivery_enabled true, image_data_delivery_enabled true, text_data_delivery_enabled true, video_data_delivery_enabled true)")
+	contains(m, "(embedding_data_delivery_enabled true, image_data_delivery_enabled true, video_data_delivery_enabled true)")
 }
 
 # A flag must be false. terraform show -json omits a value unknown at plan time.
-test_baseline_bedrock_flag_null_or_unknown_denied if {
+test_pii_bedrock_flag_null_or_unknown_denied if {
 	null_image := object.union(bedrock_flag_all_off, {"image_data_delivery_enabled": null})
 	unknown_video := object.remove(bedrock_flag_all_off, {"video_data_delivery_enabled"})
 	every lc_and_needle in [[null_image, "(image_data_delivery_enabled null)"], [unknown_video, "(video_data_delivery_enabled not known at plan time)"]] {
-		findings := bedrock_flag_findings(deny) with input as plan([acct_baseline_marker, bedrock_logging(lc_and_needle[0])])
-			with data.student_pii_account as data.acct_student_pii_account
+		findings := bedrock_flag_findings(deny) with input as plan([pii_marker, bedrock_logging(lc_and_needle[0])])
 		count(findings) == 1
 		some m in findings
 		contains(m, lc_and_needle[1])

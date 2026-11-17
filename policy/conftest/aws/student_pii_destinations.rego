@@ -31,8 +31,8 @@ dest_changes(type) := {rc |
 
 # The root's label in messages. Account-level resources (the account
 # subscription filter policy and Bedrock invocation logging) also count in the
-# account-baseline root (acct_baseline_root, account_controls.rego), which owns
-# them and is not tagged student-pii.
+# account-baseline root (acct_baseline_root, account_controls.rego), which is
+# not tagged student-pii and is the only root the SCP lets write them.
 dest_root := "account-baseline root" if acct_baseline_root
 
 else := "student-pii root" if student_pii_root
@@ -199,7 +199,7 @@ deny contains msg if {
 }
 
 # Bedrock invocation logging to S3 is denied outright, in any student-pii root
-# and in the account-baseline root.
+# and in the account-baseline root, with its own message naming the field.
 dest_bedrock_changes := dest_account_changes("aws_bedrock_model_invocation_logging_configuration")
 
 dest_bedrock_s3 contains {"address": rc.address, "field": "s3_config"} if {
@@ -222,10 +222,11 @@ deny contains msg if {
 	msg := sprintf("%s: %s, Bedrock invocation logging writes to S3 through %s (destination kind bedrock-s3). Those objects sit outside the log group's data protection policy and retention, so no exceptions.yml entry waives this. Remove the block (%s)", [b.address, dest_root, b.field, dest_rule])
 }
 
-# The configuration is one per account and Region, so the account-baseline
-# root owns it.
+# A student-pii account keeps no Bedrock invocation logging configuration at
+# all, so no invocation content is stored. AWS rejects one with every content
+# flag off and no destination, so the account-baseline root creates none
+# either (templates/account-baseline/README.md, "No invocation logging").
 deny contains msg if {
-	not acct_baseline_root
-	some rc in dest_changes("aws_bedrock_model_invocation_logging_configuration")
-	msg := sprintf("%s: student-pii app root, the Bedrock invocation logging configuration belongs to the account-baseline root (psd:root = account-baseline, templates/account-baseline/), since there is one per account and Region. Remove it from this root. No exceptions.yml entry waives this (%s)", [rc.address, dest_rule])
+	some rc in dest_bedrock_changes
+	msg := sprintf("%s: %s, a student-pii account keeps no Bedrock model invocation logging configuration, so no invocation content is stored (templates/account-baseline/README.md, No invocation logging). Remove it from this root. No exceptions.yml entry waives this (%s)", [rc.address, dest_root, dest_rule])
 }

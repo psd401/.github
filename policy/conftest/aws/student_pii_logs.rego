@@ -67,13 +67,13 @@ deny contains msg if {
 	msg := sprintf("%s: student-pii root, set logging_config.text_data_delivery_enabled = false; the provider default is true (%s)", [rc.address, pii_rule])
 }
 
-# In a student-pii root or the account-baseline root (acct_baseline_root,
-# account_controls.rego), no content-delivery flag of a Bedrock invocation
+# In a student-pii root, no content-delivery flag of a Bedrock invocation
 # logging configuration is true. These are the four flags hashicorp/aws v6.70.0
-# has. It has no argument for the API's audioDataDeliveryEnabled, so no plan
-# check sees audio (templates/account-baseline/README.md, "Audio flag"). In a
-# student-pii root the text rule above
-# already reports text delivery.
+# has; it has no argument for the API's audioDataDeliveryEnabled. The text
+# rule above already reports text delivery. student_pii_destinations.rego
+# also denies any such configuration in a student-pii root or the
+# account-baseline root outright: a student-pii account keeps none
+# (templates/account-baseline/README.md, "No invocation logging").
 bedrock_delivery_flags := {
 	"text_data_delivery_enabled",
 	"image_data_delivery_enabled",
@@ -81,13 +81,7 @@ bedrock_delivery_flags := {
 	"video_data_delivery_enabled",
 }
 
-bedrock_flags_checked := bedrock_delivery_flags - {"text_data_delivery_enabled"} if {
-	student_pii_root
-} else := bedrock_delivery_flags
-
-bedrock_flag_root if student_pii_root
-
-bedrock_flag_root if acct_baseline_root
+bedrock_flags_checked := bedrock_delivery_flags - {"text_data_delivery_enabled"}
 
 # Each checked flag must be false. A null flag, or one unknown at plan time
 # (left out of after), does not pass.
@@ -101,11 +95,7 @@ bedrock_flag_state(rc, f) := sprintf("%s %v", [f, v]) if {
 } else := sprintf("%s not known at plan time", [f])
 
 deny contains msg if {
-	bedrock_flag_root
-	some rc in input.resource_changes
-	rc.type == "aws_bedrock_model_invocation_logging_configuration"
-	some action in rc.change.actions
-	action in {"create", "update", "no-op"}
+	some rc in pii_changes("aws_bedrock_model_invocation_logging_configuration")
 	on := sort([bedrock_flag_state(rc, f) |
 		some f in bedrock_flags_checked
 		not bedrock_flag_off(rc, f)

@@ -32,50 +32,6 @@
     },
     "resource_changes": [
       {
-        "address": "aws_bedrock_model_invocation_logging_configuration.this",
-        "mode": "managed",
-        "type": "aws_bedrock_model_invocation_logging_configuration",
-        "name": "this",
-        "change": {
-          "actions": [
-            "create"
-          ],
-          "before": null,
-          "after": {
-            "logging_config": [
-              {
-                "cloudwatch_config": [
-                  {
-                    "large_data_delivery_s3_config": [],
-                    "log_group_name": "/district/bedrock/invocations",
-                    "role_arn": "arn:aws:iam::111111111111:role/bedrock-invocation-logging"
-                  }
-                ],
-                "embedding_data_delivery_enabled": false,
-                "image_data_delivery_enabled": false,
-                "s3_config": [],
-                "text_data_delivery_enabled": false,
-                "video_data_delivery_enabled": false
-              }
-            ],
-            "region": "us-west-2"
-          },
-          "after_unknown": {
-            "id": true,
-            "logging_config": [
-              {
-                "cloudwatch_config": [
-                  {
-                    "large_data_delivery_s3_config": []
-                  }
-                ],
-                "s3_config": []
-              }
-            ]
-          }
-        }
-      },
-      {
         "address": "aws_cloudwatch_log_account_policy.student_pii",
         "mode": "managed",
         "type": "aws_cloudwatch_log_account_policy",

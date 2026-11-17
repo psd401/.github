@@ -523,7 +523,9 @@ jobs:
       # Zabbix, NTP and patch window live in the private environment file
       # (15-onprem-platform.md §17). This decodes it inside the job and
       # exports them as TF_VAR_*/PKR_VAR_* for the variables
-      # templates/proxmox-vm declares. Nothing prints a value. No backend
+      # templates/proxmox-vm declares. This step prints no value, but every
+      # TF_VAR_*/PKR_VAR_* it writes to GITHUB_ENV shows in the env: block of
+      # each later step's log in the caller repo. No backend
       # config: the shared on-prem state store is a named gap (15 §13).
       - name: Resolve private environment file (TF_VAR_*, PKR_VAR_*)
         env:

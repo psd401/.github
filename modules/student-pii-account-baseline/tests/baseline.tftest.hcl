@@ -115,34 +115,6 @@ run "null_managed_identifiers_use_the_defaults" {
   }
 }
 
-# Literal Region keys: terraform 1.16.5 panics ("value has marks") rendering a failed
-# assertion that references the whole resource, because its deprecated id attribute is marked.
-run "bedrock_content_delivery_off" {
-  assert {
-    condition = (
-      aws_bedrock_model_invocation_logging_configuration.content_off["us-west-2"].region == "us-west-2"
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-west-2"].logging_config[0].text_data_delivery_enabled == false
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-west-2"].logging_config[0].image_data_delivery_enabled == false
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-west-2"].logging_config[0].embedding_data_delivery_enabled == false
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-west-2"].logging_config[0].video_data_delivery_enabled == false
-      && length(aws_bedrock_model_invocation_logging_configuration.content_off["us-west-2"].logging_config[0].s3_config) == 0
-    )
-    error_message = "In us-west-2, every Bedrock content-delivery flag the provider exposes must be false, with no s3_config."
-  }
-
-  assert {
-    condition = (
-      aws_bedrock_model_invocation_logging_configuration.content_off["us-east-1"].region == "us-east-1"
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-east-1"].logging_config[0].text_data_delivery_enabled == false
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-east-1"].logging_config[0].image_data_delivery_enabled == false
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-east-1"].logging_config[0].embedding_data_delivery_enabled == false
-      && aws_bedrock_model_invocation_logging_configuration.content_off["us-east-1"].logging_config[0].video_data_delivery_enabled == false
-      && length(aws_bedrock_model_invocation_logging_configuration.content_off["us-east-1"].logging_config[0].s3_config) == 0
-    )
-    error_message = "In us-east-1, every Bedrock content-delivery flag the provider exposes must be false, with no s3_config."
-  }
-}
-
 run "breakglass_trust_requires_permission_set_and_source_identity" {
   assert {
     condition     = aws_iam_role.breakglass.name == var.breakglass_role_name

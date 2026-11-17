@@ -1,5 +1,5 @@
-# ABOUTME: Account-level student-pii controls: one data protection policy and one Bedrock logging
-# ABOUTME: configuration per Region, a break-glass Unmask role, and an alert on every AssumeRole of it.
+# ABOUTME: Account-level student-pii controls: one data protection policy per Region, a break-glass
+# ABOUTME: Unmask role, and an alert on every AssumeRole of it. No Bedrock invocation logging exists.
 
 data "aws_caller_identity" "current" {}
 
@@ -53,22 +53,14 @@ resource "aws_cloudwatch_log_account_policy" "data_protection" {
   })
 }
 
-# Content delivery off in every Region, with no S3 or CloudWatch destination.
-# hashicorp/aws 6.68.0 and 6.70.0 expose no audio flag, so
-# audioDataDeliveryEnabled is not set here (templates/account-baseline/README.md,
-# "Audio flag").
-resource "aws_bedrock_model_invocation_logging_configuration" "content_off" {
-  for_each = toset(var.regions)
-
-  region = each.key
-
-  logging_config {
-    text_data_delivery_enabled      = false
-    image_data_delivery_enabled     = false
-    embedding_data_delivery_enabled = false
-    video_data_delivery_enabled     = false
-  }
-}
+# No Bedrock model invocation logging configuration. With none, Bedrock
+# stores no invocation content, so the control is that none exists.
+# PutModelInvocationLoggingConfiguration rejects a configuration with no S3 or
+# CloudWatch destination ("At least one logging config must be specified"),
+# so content-off cannot be expressed as a resource. The SCP's
+# DenyLogControlTamper (outputs.tf) keeps anyone but the apply role from
+# creating one, and templates/account-baseline/README.md ("No invocation
+# logging") checks after each apply that none exists.
 
 # The only principal allowed logs:Unmask. Trust is the account itself, gated
 # on the caller being the break-glass permission set's role, a caller-set
