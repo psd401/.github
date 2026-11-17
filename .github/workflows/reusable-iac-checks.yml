@@ -380,12 +380,16 @@ jobs:
       # environment file (08-iac.md 'Private environment file'), never in the
       # repo. This decodes it inside the job, writes backend.hcl for the
       # partial backend "s3" block templates/terraform-app ships, and exports
-      # TF_VAR_repo, TF_VAR_account_alias, TF_VAR_alerts_topic_name and
-      # TF_VAR_bedrock_default_model_id (gcp: TF_VAR_project_id). It also
-      # writes student-pii-account.json: cloud.aws.student_pii reduced to the
-      # break-glass role name and the data identifiers that
-      # policy/conftest/aws/account_controls.rego and unmask.rego compare
-      # against. Nothing prints a value.
+      # TF_VAR_repo, TF_VAR_account_alias, TF_VAR_alerts_topic_name,
+      # TF_VAR_bedrock_default_model_id, TF_VAR_deploy_role_prefix and, when
+      # cloud.aws.student_pii is set, TF_VAR_student_pii (gcp:
+      # TF_VAR_project_id). It also writes student-pii-account.json:
+      # cloud.aws.student_pii reduced to the break-glass role name and the data
+      # identifiers that policy/conftest/aws/account_controls.rego and
+      # unmask.rego compare against. This step prints no value, but every
+      # TF_VAR_* it writes to GITHUB_ENV, including TF_VAR_student_pii with
+      # the custom identifier regexes, shows in the env: block of each later
+      # step's log in the caller repo.
       - name: Resolve private environment file (backend.hcl, TF_VAR_*)
         env:
           PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}

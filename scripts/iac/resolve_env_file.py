@@ -30,7 +30,10 @@ proxmox: exports TF_VAR_/PKR_VAR_ pairs the proxmox-vm template's root module
          never carries a custom identifier regex or test string. May run alone
          or alongside a --platform mode.
 
-Never prints a resolved value: errors name the missing key only.
+Never prints a resolved value: errors name the missing key only. Every value
+written to --github-env still shows in the env: block of each later step's
+log in the caller repo, including TF_VAR_student_pii with the custom
+identifier regexes.
 """
 import argparse
 import json
