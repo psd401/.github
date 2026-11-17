@@ -143,7 +143,7 @@ jobs:
     name: env-file-check
     # Fully qualified: a `./` path inside a reusable workflow resolves against
     # the caller's repository, where this file does not exist.
-    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@0ecfe7112d6d35e0d50b0a563933413aedcac1c3 # v1.4.0
+    uses: PSD401/.github/.github/workflows/reusable-env-file-check.yml@ad250c64abde0502dfdf22ab7bd861251032f804 # v1.6.0
     secrets:
       PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
 
