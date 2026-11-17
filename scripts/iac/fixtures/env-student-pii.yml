@@ -1,5 +1,7 @@
 # Test fixture only: fake values in a valid environment-file shape, with
-# cloud.aws.student_pii. Hosts are example.internal.
+# cloud.aws.student_pii and cloud.aws.ses. Hosts are example.internal; From
+# addresses use a <district-domain> placeholder (redact-check flags any
+# real-shaped address).
 district_id: testdistrict
 network:
   vlans:
@@ -48,6 +50,12 @@ cloud:
           regex: "\\bS[0-9]{7}\\b"
           test_matches: ["S1234567"]
           test_non_matches: ["S12345"]
+    ses:
+      approved_from_addresses:
+        - app-alerts@<district-domain>
+        - app-alarms@<district-domain>
+        - app-verification@<district-domain>
+        - team-alerts@<district-domain>
   gcp:
     state_backend: gcs
     project_id:
