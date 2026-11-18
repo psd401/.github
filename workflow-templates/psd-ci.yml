@@ -1,8 +1,7 @@
 name: CI
 on:
+  # pull_request only: a check doesn't re-run after the merge (psd-dev-standards standards/06 §4, Runner minutes).
   pull_request:
-  push:
-    branches: [$default-branch]
 jobs:
   psd-ci:
     uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@704b95336d5ee06510f81054400d42caa12db8d9 # v1.3.1

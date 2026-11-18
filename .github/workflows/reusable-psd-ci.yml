@@ -41,9 +41,9 @@ on:
         type: boolean
         default: false
       secret-scan-mode:
-        description: "gitleaks full-history secret scan: warn | fail | off. Free replacement for paid GitHub Secret Protection on private repos (standards ROADMAP Phase 0, 2026-09-25)"
+        description: "gitleaks full-history secret scan: warn | fail | off. Off by default: reusable-security-scan.yml already runs gitleaks over full history with the org rules on the same commit, and every job bills at least one minute (psd-dev-standards standards/06 §4, Runner minutes)"
         type: string
-        default: "warn"
+        default: "off"
 
 jobs:
   run:
@@ -193,9 +193,11 @@ jobs:
             echo "== test (custom)"; eval "$TEST_CMD"
           fi
 
-  # Separate job so findings never break the required `psd-ci` check while in
-  # warn mode; surfaces as the `secret-scan` check. Pinned, checksum-verified
-  # CLI per standards/04 (never a convenience action).
+  # Off unless a caller sets secret-scan-mode: security-scan runs the org's
+  # gitleaks scan on the same commit. When on, a separate job so findings never
+  # break the required `psd-ci` check while in warn mode; surfaces as the
+  # `secret-scan` check. Pinned, checksum-verified CLI per standards/04 (never a
+  # convenience action).
   secret-scan:
     name: secret-scan
     # A newer push to the same PR cancels this run, which could only report
