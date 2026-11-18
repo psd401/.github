@@ -39,10 +39,15 @@ The repo must carry the MIT `LICENSE` file. If this check fails, someone removed
 renamed `LICENSE` — restore it. If you believe the repo needs a different license,
 that's a Technology Services decision. Ask, don't swap it.
 
+The same check is also a step in `security-scan` ("LICENSE present and allowed"). The
+separate `license-check` job is being retired, because every job costs at least one
+Actions minute. Fix a failure in either the same way.
+
 ## security-scan
 
 This check scans workflows and code for security problems: leaked secrets, risky
-GitHub Actions patterns, and vulnerable dependency changes.
+GitHub Actions patterns, and vulnerable dependency changes. It also checks the
+`LICENSE` file (see license-check).
 
 - **Secret detected**: remove the secret from the code, then rotate the credential —
   it's in git history now. Tell Technology Services. This is a no-blame process, and

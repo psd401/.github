@@ -1,6 +1,8 @@
 name: Security Scan
 on:
   pull_request:
+  # The one check that keeps push: a direct push to the default branch gets its
+  # secret scan at once (psd-dev-standards standards/06 §4, Runner minutes).
   push:
     branches: [$default-branch]
   schedule:

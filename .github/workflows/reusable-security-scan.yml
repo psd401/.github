@@ -1,5 +1,5 @@
 # Reusable security scan: zizmor (workflow hardening) + gitleaks (secrets)
-# + dependency review on PRs. Scanners run as pinned CLI binaries, never
+# + the LICENSE check + dependency review on PRs. Scanners run as pinned CLI binaries, never
 # convenience actions (trivy-action compromise lesson, standards/04-security.md).
 name: Reusable Security Scan
 on:
@@ -9,6 +9,14 @@ on:
         description: "Full-history secret scan (recommended true for private repos; public repos have GitHub secret scanning)"
         type: boolean
         default: true
+      check_license:
+        description: "Fail unless the repo has a LICENSE file in allowed_spdx. Replaces reusable-license-check.yml as a step, because every job bills at least one minute (psd-dev-standards standards/06 §4, Runner minutes)"
+        type: boolean
+        default: true
+      allowed_spdx:
+        description: "Space-separated allowed license identifiers (same as reusable-license-check.yml)"
+        type: string
+        default: "MIT"
 jobs:
   run:
     name: security-scan
@@ -130,6 +138,27 @@ jobs:
           fi
           ./gitleaks git --no-banner --redact --verbose --exit-code 1 "${cfg[@]}" . \
             || { echo "::error::gitleaks found potential secrets or student data (redacted above)"; exit 1; }
+      - name: LICENSE present and allowed
+        # Same check as reusable-license-check.yml, which this step replaces.
+        # Runs even when an earlier scanner fails, so one run reports all of them.
+        if: ${{ !cancelled() && inputs.check_license }}
+        env:
+          ALLOWED_SPDX: ${{ inputs.allowed_spdx }}
+        run: |
+          f=$(ls LICENSE LICENSE.md LICENSE.txt 2>/dev/null | head -1)
+          if [ -z "$f" ]; then
+            echo "::error::No LICENSE file. District-authored repos are MIT-licensed (psd-dev-standards standards/01-repo-lifecycle.md)."
+            exit 1
+          fi
+          ok=false
+          for id in $ALLOWED_SPDX; do
+            case "$id" in
+              MIT) grep -q "MIT License" "$f" && ok=true ;;
+              *)   grep -qi "$id" "$f" && ok=true ;;
+            esac
+          done
+          $ok || { echo "::error::LICENSE does not match allowed set: $ALLOWED_SPDX"; exit 1; }
+          echo "License OK ($f)"
   dependency-review:
     name: dependency-review
     # A newer push to the same PR cancels this run, which could only report
