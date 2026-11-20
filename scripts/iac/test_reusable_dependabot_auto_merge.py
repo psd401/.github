@@ -328,26 +328,49 @@ def test_decision_merge_failure_fails_the_step(tmp_path):
 
 # --- an unapproved run turns off auto-merge an earlier run turned on -------
 
-def test_disable_turns_off_auto_merge_that_is_on(tmp_path):
-    pull = {"number": 7, "auto_merge": {"enabled_by": {"login": "github-actions[bot]"}, "merge_method": "squash"}}
-    r = run_step("disable", tmp_path, gh={"PULL": json.dumps(pull)})
+# A GITHUB_TOKEN-enabled auto-merge reports this login: psd401/psd-central-auth#236,
+# REST auto_merge.enabled_by, read 2026-11-20.
+ACTIONS_LOGIN = "github-actions[bot]"
+
+
+def pull(enabled_by=ACTIONS_LOGIN):
+    by = None if enabled_by is None else {"login": enabled_by, "type": "Bot" if "[bot]" in enabled_by else "User"}
+    return json.dumps({"number": 7, "auto_merge": {"enabled_by": by, "merge_method": "squash"}})
+
+
+def test_disable_turns_off_auto_merge_this_workflow_turned_on(tmp_path):
+    r = run_step("disable", tmp_path, gh={"PULL": pull()})
     assert r.rc == 0, r.out
     assert len(r.pr_calls) == 1, r.calls
     args = r.pr_calls[0].split()
     assert args[:3] == ["pr", "merge", "--disable-auto"]
     assert PR_URL in args
     assert "::warning::" in r.out
+    assert one_line(r.summary), r.summary
+
+
+@pytest.mark.parametrize("login", ["octocat", "dependabot[bot]", "psd-automation[bot]", "github-actions", None],
+                         ids=repr)
+def test_disable_leaves_auto_merge_someone_else_turned_on(login, tmp_path):
+    r = run_step("disable", tmp_path, gh={"PULL": pull(login)})
+    assert r.rc == 0, r.out
+    assert r.pr_calls == [], r.calls
+    assert one_line(r.summary), r.summary
+    assert "left on" in r.summary
+    if login:
+        assert login in r.summary
 
 
 def test_disable_does_nothing_when_auto_merge_is_off(tmp_path):
     r = run_step("disable", tmp_path, gh={"PULL": json.dumps({"number": 7, "auto_merge": None})})
     assert r.rc == 0, r.out
     assert r.pr_calls == []
+    assert r.summary == ""
 
 
 @pytest.mark.parametrize("gh", [
     {"PULL": json.dumps({"auto_merge": None}), "FAIL_PULL": "1"},
-    {"PULL": json.dumps({"auto_merge": {"merge_method": "squash"}}), "FAIL_PR": "1"},
+    {"PULL": pull(), "FAIL_PR": "1"},
 ], ids=["read fails", "disable fails"])
 def test_disable_failure_fails_the_step(gh, tmp_path):
     r = run_step("disable", tmp_path, gh=gh)

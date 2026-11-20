@@ -14,8 +14,10 @@
 #    direct development dependency. Empty or unreadable metadata merges nothing.
 # The merge call names the head commit those checks saw, so a later push
 # makes it fail. A run that does not approve the PR turns auto-merge off if
-# an earlier run turned it on. GitHub keeps it on after a push by Dependabot
-# or anyone with write access, such as a minor update added to a group.
+# github-actions[bot] turned it on. GitHub keeps it on after a push by
+# Dependabot or anyone with write access, such as a minor update added to a
+# group. Auto-merge that a person or another app turned on stays on, and the
+# job summary names who turned it on.
 #
 # The caller's trigger is pull_request, not pull_request_target. A Dependabot
 # pull_request run starts with a read-only token but honors a permissions:
@@ -159,6 +161,8 @@ jobs:
           fi
 
       # Runs on every outcome but approval, including a failed step above.
+      # It turns off only auto-merge that a GITHUB_TOKEN turned on, which
+      # GitHub records as github-actions[bot]. A person may turn it on by hand.
       - name: Turn off auto-merge this run did not approve
         id: disable
         if: ${{ !cancelled() && steps.decide.outputs.merge != 'true' }}
@@ -168,8 +172,17 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           set -o pipefail
-          on=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.auto_merge != null')
-          if [ "$on" = true ]; then
-            gh pr merge --disable-auto "$PR_URL"
-            echo "::warning::Turned off auto-merge, because this run did not approve the PR's current commits."
-          fi
+          by=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" \
+            --jq 'if .auto_merge == null then "" else .auto_merge.enabled_by.login // "an unknown account" end')
+          case "$by" in
+            "") ;;
+            "github-actions[bot]")
+              gh pr merge --disable-auto "$PR_URL"
+              msg="Turned off auto-merge, because this run did not approve the PR's current commits."
+              echo "::warning::$msg"
+              echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "Auto-merge left on: $by turned it on, not this workflow." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac

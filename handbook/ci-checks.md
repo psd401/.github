@@ -71,6 +71,8 @@ job summary says why.
   for CI, so it stopped. Tell Technology Services, who manage the rulesets.
 - **It warns that it turned off auto-merge**: the PR changed after an earlier run
   approved it. Review and merge it yourself.
+- **Its summary says auto-merge was left on**: a person or another app turned it on,
+  so this check leaves it alone. Whoever turned it on owns the merge.
 
 ## A check runs on the CodeBuild runner
 
