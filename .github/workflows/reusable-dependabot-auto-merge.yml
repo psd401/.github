@@ -1,0 +1,175 @@
+# ABOUTME: Reusable workflow that turns on auto-merge for a Dependabot PR whose every update is a patch to a direct development dependency.
+# ABOUTME: Standard 04-security rule 4: those merge once required checks pass. Nothing else auto-merges. Every other PR is left for a person.
+#
+# It turns on auto-merge only when all of these hold:
+# 1. Dependabot opened the PR from a branch in this repo, not a fork (job if).
+# 2. The base branch enforces a required status check, through an active
+#    ruleset or classic branch protection. With none, gh pr merge --auto
+#    merges at once instead of waiting for CI.
+# 3. Dependabot wrote every commit and GitHub verified each signature. The
+#    PR author stays dependabot[bot] after someone else pushes, and
+#    fetch-metadata checks only the first commit.
+# 4. dependabot/fetch-metadata reads the update, with commit verification on.
+# 5. Every update in the PR (a group has several) is a semver patch to a
+#    direct development dependency. Empty or unreadable metadata merges nothing.
+# The merge call names the head commit those checks saw, so a later push
+# makes it fail. A run that does not approve the PR turns auto-merge off if
+# an earlier run turned it on. GitHub keeps it on after a push by Dependabot
+# or anyone with write access, such as a minor update added to a group.
+#
+# The caller's trigger is pull_request, not pull_request_target. A Dependabot
+# pull_request run starts with a read-only token but honors a permissions:
+# block, so the caller grants the two write scopes below. A
+# pull_request_target run gets a read-only token when Dependabot created the
+# base ref, so it cannot merge. This workflow runs no code from the PR.
+#
+# The calling repo must allow auto-merge (Settings, General). Pass a merge
+# method the repo allows. Adding this reusable is a MINOR release (RELEASING.md).
+#
+# Caller (.github/workflows/dependabot-auto-merge.yml):
+#
+#   name: Dependabot auto-merge
+#   on: pull_request
+#   permissions: {}
+#   jobs:
+#     auto-merge:
+#       if: github.event.pull_request.user.login == 'dependabot[bot]'
+#       permissions:
+#         contents: write
+#         pull-requests: write
+#       uses: PSD401/.github/.github/workflows/reusable-dependabot-auto-merge.yml@<release sha> # vX.Y.Z
+#       with:
+#         merge_method: squash
+name: Reusable Dependabot auto-merge
+
+"on":
+  workflow_call:
+    inputs:
+      merge_method:
+        description: "How GitHub merges the PR: merge, squash or rebase. Pass a method the calling repo allows"
+        type: string
+        default: squash
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    name: auto-merge
+    # The PR's author, not github.actor, which is whoever last triggered the run.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # GitHub's Dependabot auto-merge recipe grants these two. The caller grants them too.
+    permissions:
+      contents: write # the merge writes to the base branch
+      pull-requests: write # turn auto-merge on or off
+    steps:
+      - name: Check merge_method
+        id: method
+        env:
+          MERGE_METHOD: ${{ inputs.merge_method }}
+        run: |
+          case "$MERGE_METHOD" in
+            merge | squash | rebase) ;;
+            *)
+              echo "::error::merge_method must be merge, squash or rebase."
+              exit 1
+              ;;
+          esac
+
+      # rules/branches lists rules from active rulesets only, so a ruleset in
+      # evaluate mode does not count. Classic protection counts unless its
+      # enforcement is off.
+      - name: Require that the base branch enforces a status check
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # Bare command substitutions: a failing gh call exits the step under
+          # bash -e, so nothing after it runs. --paginate prints one line per
+          # matching rule on each page, so any line means a required check.
+          set -o pipefail
+          rulesets=$(gh api --paginate "repos/$GITHUB_REPOSITORY/rules/branches/$BASE_REF" \
+            --jq '.[] | select(.type == "required_status_checks" and ((.parameters.required_status_checks // []) | length) > 0) | .type')
+          classic=$(gh api "repos/$GITHUB_REPOSITORY/branches/$BASE_REF" \
+            --jq '(.protection.required_status_checks // {})
+              | ((.enforcement_level // "off") != "off")
+                and (((.contexts // []) + (.checks // [])) | length > 0)')
+          if [ -n "$rulesets" ] || [ "$classic" = true ]; then
+            echo "enforced=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enforced=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::$BASE_REF requires no status check, so auto-merge would not wait for CI. Left for a person."
+            echo "Not auto-merged: $BASE_REF requires no status check, so auto-merge would not wait for CI." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Dependabot's commits show committer web-flow, the signing identity, so
+      # only the author is checked.
+      - name: Require that Dependabot wrote every commit
+        id: provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # --paginate runs the filter once per page, so it prints one line per
+          # offending commit instead of an aggregate that pages would split.
+          # A failing gh call exits the step before the test below.
+          set -o pipefail
+          offenders=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" \
+            --jq '.[] | select(.author.login != "dependabot[bot]" or .commit.verification.verified != true) | .sha')
+          if [ -z "$offenders" ]; then
+            echo "dependabot=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dependabot=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Commits not written by dependabot[bot] or not verified: ${offenders//$'\n'/ }. Left for a person."
+            echo "Not auto-merged: a commit was not written by dependabot[bot] or its signature is not verified." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # skip-commit-verification: false is the default. It is stated so a change shows in review.
+      - name: Fetch Dependabot metadata
+        id: metadata
+        if: steps.gate.outputs.enforced == 'true' && steps.provenance.outputs.dependabot == 'true'
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          skip-commit-verification: false
+
+      # Positive matches only, so an empty, missing or malformed list merges
+      # nothing. --match-head-commit makes GitHub refuse if the head moved.
+      - name: Turn on auto-merge for patch updates to development dependencies
+        id: decide
+        if: steps.gate.outputs.enforced == 'true' && steps.provenance.outputs.dependabot == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATES: ${{ steps.metadata.outputs.updated-dependencies-json }}
+          MERGE_METHOD: ${{ inputs.merge_method }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -o pipefail
+          if jq -e 'type == "array" and length > 0
+              and all(.[]; .updateType == "version-update:semver-patch" and .dependencyType == "direct:development")' \
+              <<<"$UPDATES" >/dev/null 2>&1; then
+            gh pr merge --auto "--$MERGE_METHOD" --match-head-commit "$HEAD_SHA" "$PR_URL"
+            echo "merge=true" >> "$GITHUB_OUTPUT"
+            echo "Auto-merge on ($MERGE_METHOD): every update is a patch to a direct development dependency. It merges when required checks pass." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "merge=false" >> "$GITHUB_OUTPUT"
+            echo "Not auto-merged: not every update is a patch to a direct development dependency." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Runs on every outcome but approval, including a failed step above.
+      - name: Turn off auto-merge this run did not approve
+        id: disable
+        if: ${{ !cancelled() && steps.decide.outputs.merge != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -o pipefail
+          on=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.auto_merge != null')
+          if [ "$on" = true ]; then
+            gh pr merge --disable-auto "$PR_URL"
+            echo "::warning::Turned off auto-merge, because this run did not approve the PR's current commits."
+          fi
