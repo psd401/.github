@@ -40,6 +40,10 @@ on:
         description: "Tier C escape hatch only"
         type: boolean
         default: false
+      runner:
+        description: "github (default): ubuntu-latest. psd-linux: the org's ephemeral AWS CodeBuild runner (group psd-linux-ci), which bills to AWS instead of the Actions allowance. Callers pass vars.PSD_LINUX_RUNNER (default github) as an expression; the org variable is visible only to repos in the runner group, so a repo outside it stays on ubuntu-latest. Public repos always get ubuntu-latest (free there; standard 04 rule 21 (d)). Only jobs with no secret, no id-token and no Docker take it (rule 21 (b)); psd-dev-standards plans/self-hosted-runners.md"
+        type: string
+        default: "github"
       secret-scan-mode:
         description: "gitleaks full-history secret scan: warn | fail | off. Off by default: reusable-security-scan.yml already runs gitleaks over full history with the org rules on the same commit, and every job bills at least one minute (psd-dev-standards standards/06 §4, Runner minutes)"
         type: string
@@ -54,7 +58,9 @@ jobs:
     concurrency:
       group: psd-ci-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    # Runner chosen by inputs.runner (see its description). Only runs-on
+    # changes, never the job id or name, so required check names stay put.
+    runs-on: ${{ inputs.runner == 'psd-linux' && github.event.repository.visibility != 'public' && format('codebuild-psd-ci-runner-small-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -207,7 +213,9 @@ jobs:
       group: secret-scan-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     if: inputs.secret-scan-mode != 'off'
-    runs-on: ubuntu-latest
+    # Runner chosen by inputs.runner (see its description). Only runs-on
+    # changes, never the job id or name, so required check names stay put.
+    runs-on: ${{ inputs.runner == 'psd-linux' && github.event.repository.visibility != 'public' && format('codebuild-psd-ci-runner-small-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read

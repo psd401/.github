@@ -57,6 +57,20 @@ GitHub Actions patterns, and vulnerable dependency changes. It also checks the
 - **Workflow (zizmor) finding**: the log links to an explanation of the exact
   pattern and its fix.
 
+## A check runs on the CodeBuild runner
+
+Some private repos run `psd-ci`, `security-scan` and their own lint and test jobs on the
+org's AWS CodeBuild runner instead of GitHub's, so they don't use up the org's
+Actions minutes. The job log's "Set up job" step names a `codebuild-psd-ci-runner-` label.
+
+- **It fails on a missing tool**: CodeBuild's Ubuntu image has fewer tools than GitHub's
+  `ubuntu-latest`. Install the tool in a step, or ask Technology Services to move that
+  job back.
+- **It stays queued**: the runner may be down. Technology Services can set org variable
+  `PSD_LINUX_RUNNER` to `github`, then cancel and re-run the job.
+- **It needs a secret, OIDC or Docker**: that job can't run there (standard 04 rule 21).
+  Leave its `runner` input unset.
+
 ## A human approval is missing
 
 Production-tier repos require one human approval, and you can't approve your own
