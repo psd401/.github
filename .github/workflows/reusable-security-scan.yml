@@ -5,6 +5,10 @@ name: Reusable Security Scan
 on:
   workflow_call:
     inputs:
+      runner:
+        description: "github (default): ubuntu-latest. psd-linux: the org's ephemeral AWS CodeBuild runner (group psd-linux-ci), which bills to AWS instead of the Actions allowance. Callers pass vars.PSD_LINUX_RUNNER (default github) as an expression; the org variable is visible only to repos in the runner group, so a repo outside it stays on ubuntu-latest. Public repos always get ubuntu-latest (free there; standard 04 rule 21 (d)). Only jobs with no secret, no id-token and no Docker take it (rule 21 (b)); psd-dev-standards plans/self-hosted-runners.md"
+        type: string
+        default: "github"
       run_gitleaks:
         description: "Full-history secret scan (recommended true for private repos; public repos have GitHub secret scanning)"
         type: boolean
@@ -26,7 +30,9 @@ jobs:
     concurrency:
       group: security-scan-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    # Runner chosen by inputs.runner (see its description). Only runs-on
+    # changes, never the job id or name, so required check names stay put.
+    runs-on: ${{ inputs.runner == 'psd-linux' && github.event.repository.visibility != 'public' && format('codebuild-psd-ci-runner-small-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
