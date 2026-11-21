@@ -77,6 +77,9 @@ conftest test terraform/tfplan.json \
   --all-namespaces
 ```
 
+CI doesn't run this step: it needs a plan, and CI can't reach Proxmox, so the IaC owner runs it
+locally with the plan.
+
 No `policy/conftest/onprem-terraform` package exists yet (this PR's scope is
 `compose.rego` only), so that step is skipped until one ships -- a repo with
 no `terraform/` directory skips it too, by the same existence check.
