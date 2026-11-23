@@ -182,13 +182,25 @@ def test_upstream_rollup_runs_after_runtime_standard_and_before_install():
     assert runtime < rollup < install
 
 
+# Exact conditions, not substrings: an `||`, or a status function such as
+# always(), would let a step run under gate: off or after a failed upstream
+# rollup (a step `if:` with no status function implies success()).
+GATED_IFS = {
+    "actions/setup-node": GATE_OFF + """ && contains(fromJSON('["npm","npm-nolock","pnpm","yarn"]'), steps.pm.outputs.pm)""",
+    "oven-sh/setup-bun": GATE_OFF + " && steps.pm.outputs.pm == 'bun'",
+    "astral-sh/setup-uv": GATE_OFF + " && steps.pm.outputs.pm == 'uv'",
+    "Install": GATE_OFF,
+    "Run gate": GATE_OFF,
+}
+
+
 def test_gate_off_skips_setup_install_and_gate():
-    gated = [s for s in steps() if (s.get("uses") or "").split("@")[0] in
-             ("actions/setup-node", "oven-sh/setup-bun", "astral-sh/setup-uv")]
-    gated += [step_named("Install"), step_named("Run gate")]
-    assert len(gated) == 5
-    for s in gated:
-        assert GATE_OFF in s.get("if", ""), s.get("name") or s.get("uses")
+    seen = {}
+    for s in steps():
+        key = s.get("name") if s.get("name") in GATED_IFS else (s.get("uses") or "").split("@")[0]
+        if key in GATED_IFS:
+            seen[key] = s.get("if")
+    assert seen == GATED_IFS
 
 
 def test_only_those_steps_depend_on_gate():
