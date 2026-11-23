@@ -72,3 +72,41 @@ def test_diff_mode_flags_the_account_and_not_the_hash(tmp_path):
     git("commit", "-qam", "change")
     r = subprocess.run(["bash", str(SCRIPT), "--diff", "HEAD~1"], cwd=repo, env=env, capture_output=True, text=True)
     assert account_findings(r) == [f"REDACTION: f.txt:3: aws-account-id: {ACCOUNT}"], r.stdout
+
+
+def scan_with_repo_allowlist(tmp_path, text):
+    """Scan one line with the shipped policy/redaction/allow.txt (the default ALLOW_FILE)."""
+    f = tmp_path / "sample.txt"
+    f.write_text(text + "\n")
+    env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"}
+    return subprocess.run(["bash", str(SCRIPT), "--paths", str(f)], env=env, capture_output=True, text=True)
+
+
+# Values built at run time so this source holds no match for the scan to find.
+SYSUPTIME_OID = ".".join(["1", "3", "6", "1", "2", "1", "1", "3", "0"])
+LOOPBACK_NET = ".".join(["127", "0", "0", "0"]) + "/8"
+DUMP_CHUNK = "zabbix" + "@" + "history.tsv.zst"
+
+
+@pytest.mark.parametrize("line", [
+    f'snmp_oid: "{SYSUPTIME_OID}"',
+    f"view systemonly included .{SYSUPTIME_OID}",
+    f"mynetworks = {LOOPBACK_NET} 192.0.2.10/32",
+    f'echo rows > "$target/{DUMP_CHUNK}"',
+])
+def test_repo_allowlist_clears_known_false_positives(tmp_path, line):
+    r = scan_with_repo_allowlist(tmp_path, line)
+    assert r.returncode == 0, r.stdout
+
+
+@pytest.mark.parametrize("line", [
+    ".".join(["10", "2", "1", "1", "3"]),        # 2.1.1.3 inside a longer dotted run is still flagged as 10.2.1.1
+    ".".join(["2", "1", "1", "30"]),             # a near neighbour of the allowed fragment
+    ".".join(["1", "3", "6", "10"]),
+    ".".join(["127", "0", "0", "0"]) + "/16",    # only the /8 loopback block is allowed
+    "zabbix" + "@" + "history.example.org",      # a real-shaped address with a chunk-like local part
+    "ops" + "@" + "history.tsv.zst.example.org",
+])
+def test_repo_allowlist_entries_stay_narrow(tmp_path, line):
+    r = scan_with_repo_allowlist(tmp_path, line)
+    assert r.returncode == 1, r.stdout

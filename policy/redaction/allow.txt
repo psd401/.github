@@ -20,11 +20,26 @@ re:^[0-9]+\.[0-9]+\.[0-9]+$
 127.0.0.1
 0.0.0.0/0
 0.0.0.0
+# the whole IPv4 loopback block (RFC 1122), e.g. Postfix mynetworks
+127.0.0.0/8
+
+# SNMP OIDs: the ipv4 pattern takes the first four arcs of a dotted OID and then
+# the next four, so the public SNMPv2-MIB sysUpTime OID 1.3.6.1.2.1.1.3.0 yields
+# "1.3.6.1" (the iso.org.dod.internet prefix every SNMP OID starts with) and
+# "2.1.1.3" (its mgmt.mib-2.system.sysUpTime arcs). The scanner hands only the
+# matched text to this list, never the line, so the entry is anchored to exactly
+# those two strings. As addresses, 1.3.6.1 is China Telecom space (APNIC) and
+# 2.1.1.3 is RIPE NCC space; neither is a district address.
+re:^(1\.3\.6\.1|2\.1\.1\.3)$
 
 # GitHub's generic noreply address for the Claude Code commit identity,
 # named in 04-security.md as a public threat indicator (the CHAINDROP worm
 # impersonates it), not a PSD contact
 claude@users.noreply.github.com
+
+# MySQL Shell dump chunk file names (<schema>@<table>.tsv.zst) match the email
+# pattern. ".zst" is not a top-level domain, so no such name is a mailbox.
+re:^[A-Za-z0-9_]+@[A-Za-z0-9_]+\.tsv\.zst$
 
 # The worked proxmox-vm example: 0 is the documented placeholder for
 # network.vlans.workload.id (resolved from the environment file at apply
