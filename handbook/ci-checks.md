@@ -17,6 +17,8 @@ Common failures and their fixes:
 | Frozen lockfile error | `package.json` or `pyproject.toml` changed but the lockfile didn't | Run `bun install` or `uv lock` locally and commit the updated lockfile |
 | Lint or typecheck errors | Style or type problems | Run the same command locally (it's printed in the log), fix the errors, and push |
 | Runtime standard warning | The repo uses npm, pnpm, yarn, or pip instead of bun or uv | Not blocking yet, but convert before the warning becomes a failure: [bun](bun.md) or [uv](uv.md) |
+| An upstream gate job did not succeed | The repo runs some of its gates as its own jobs, and one of them failed, was cancelled, or was skipped | Open that job's log in the same run and fix it there. A skipped job fails `psd-ci` too, so check the job's `if:` |
+| `gate: off` needs upstream-results | The workflow turned the standard gate off but passes no results from its own jobs | Add `needs:` on the repo's gate jobs and `upstream-results: ${{ join(needs.*.result, ' ') }}` to the `psd-ci` job, or remove `gate: "off"` |
 
 Reproduce locally first. The log prints every command it ran, and running the same
 command on your machine is almost always faster than pushing guesses.
