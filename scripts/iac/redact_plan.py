@@ -29,7 +29,9 @@ carry a value is masked with the sensitivity map Terraform emits next to it:
   resources a plan leaves unchanged (17-email-sending.md rule 9): managed
   IAM policy, role and attachment resources only (IAM_STATE_TYPES), each
   with address, mode, type, name and the IAM_STATE_ATTRS values, masked by
-  its sensitive_values first; every other resource and attribute is dropped.
+  its sensitive_values first, and those attributes' sensitive_values kept so
+  ses_send.rego can deny a sensitive document; every other resource and
+  attribute is dropped.
   Policy JSON and policy ARNs are not secrets. ARNs carry account IDs, which
   resource_changes and planned_values already carry unmasked.
 """
@@ -120,14 +122,24 @@ def iam_state_module(module):
     for res in module.get("resources", []):
         if res.get("mode") != "managed" or res.get("type") not in IAM_STATE_TYPES:
             continue
-        values = redact(res.get("values") or {}, res.get("sensitive_values", {}))
+        sens = res.get("sensitive_values", {})
+        values = redact(res.get("values") or {}, sens)
         kept = {k: values[k] for k in IAM_STATE_ATTRS if k in values}
         if isinstance(kept.get("inline_policy"), list):
             kept["inline_policy"] = [
                 {k: block[k] for k in INLINE_POLICY_ATTRS if k in block}
                 for block in kept["inline_policy"] if isinstance(block, dict)]
-        resources.append({k: res[k] for k in ("address", "mode", "type", "name") if k in res}
-                         | {"values": kept})
+        entry = {k: res[k] for k in ("address", "mode", "type", "name") if k in res} | {"values": kept}
+        # Which kept attributes were masked, so ses_send.rego can deny a
+        # sensitive policy document instead of reading null as "no grant".
+        kept_sens = {k: sens[k] for k in IAM_STATE_ATTRS if isinstance(sens, dict) and k in sens}
+        if isinstance(kept_sens.get("inline_policy"), list):
+            kept_sens["inline_policy"] = [
+                {k: block[k] for k in INLINE_POLICY_ATTRS if k in block} if isinstance(block, dict) else block
+                for block in kept_sens["inline_policy"]]
+        if kept_sens:
+            entry["sensitive_values"] = kept_sens
+        resources.append(entry)
     if resources:
         out["resources"] = resources
     children = [iam_state_module(c) for c in module.get("child_modules", [])]

@@ -83,6 +83,14 @@
           "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"logs:PutLogEvents\", \"Resource\": \"*\"}]}"
          }
         ]
+       },
+       "sensitive_values": {
+        "managed_policy_arns": [
+         false
+        ],
+        "inline_policy": [
+         {}
+        ]
        }
       },
       {
@@ -92,6 +100,9 @@
        "name": "secret_doc",
        "values": {
         "policy": null
+       },
+       "sensitive_values": {
+        "policy": true
        }
       }
      ],
