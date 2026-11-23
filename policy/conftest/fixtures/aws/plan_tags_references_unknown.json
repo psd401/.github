@@ -1,0 +1,59 @@
+{
+  "plan_tags_references_unknown": {
+    "format_version": "1.2",
+    "terraform_version": "1.16.5",
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "full_name": "registry.terraform.io/hashicorp/aws",
+          "expressions": {
+            "region": {
+              "constant_value": "us-west-2"
+            },
+            "default_tags": [
+              {
+                "tags": {
+                  "references": [
+                    "var.application",
+                    "var.environment",
+                    "var.owner",
+                    "var.repo",
+                    "var.data_classification"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "root_module": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_sns_topic.computed",
+        "mode": "managed",
+        "type": "aws_sns_topic",
+        "name": "computed",
+        "provider_name": "registry.terraform.io/hashicorp/aws",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "name": "computed",
+            "tags": {}
+          },
+          "after_unknown": {
+            "arn": true,
+            "tags": {
+              "psd:backup": true
+            },
+            "tags_all": true
+          }
+        }
+      }
+    ]
+  }
+}

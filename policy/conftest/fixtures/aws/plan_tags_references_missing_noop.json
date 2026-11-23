@@ -1,0 +1,68 @@
+{
+  "plan_tags_references_missing_noop": {
+    "format_version": "1.2",
+    "terraform_version": "1.16.5",
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "full_name": "registry.terraform.io/hashicorp/aws",
+          "expressions": {
+            "region": {
+              "constant_value": "us-west-2"
+            },
+            "default_tags": [
+              {
+                "tags": {
+                  "references": [
+                    "var.application",
+                    "var.environment",
+                    "var.owner",
+                    "var.repo",
+                    "var.data_classification"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "root_module": {}
+    },
+    "resource_changes": [
+      {
+        "address": "aws_sns_topic.steady",
+        "mode": "managed",
+        "type": "aws_sns_topic",
+        "name": "steady",
+        "provider_name": "registry.terraform.io/hashicorp/aws",
+        "change": {
+          "actions": [
+            "no-op"
+          ],
+          "before": {
+            "name": "steady",
+            "tags_all": {
+              "psd:application": "exampleapp",
+              "psd:environment": "prod",
+              "psd:owner": "platform-team",
+              "psd:managed-by": "terraform",
+              "psd:data-classification": "internal"
+            }
+          },
+          "after": {
+            "name": "steady",
+            "tags_all": {
+              "psd:application": "exampleapp",
+              "psd:environment": "prod",
+              "psd:owner": "platform-team",
+              "psd:managed-by": "terraform",
+              "psd:data-classification": "internal"
+            }
+          },
+          "after_unknown": {}
+        }
+      }
+    ]
+  }
+}

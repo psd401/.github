@@ -153,9 +153,42 @@ test_rds_public_denied if {
 	contains(msg, "publicly accessible")
 }
 
-test_tags_from_expression_denied if {
-	some msg in deny with input as data.plan_tags_expression
-	contains(msg, "map literal")
+test_tags_no_default_tags_block_denied if {
+	some msg in deny with input as data.plan_tags_no_block
+	contains(msg, "has no default_tags block")
+}
+
+# Terraform 1.16.5 plans `tags = { "psd:application" = var.app, ... }` (and
+# `tags = var.tags`) as {"references": [...]}: the keys are checked against
+# each planned resource's tags_all instead.
+test_tags_references_with_no_taggable_resources_pass if {
+	count(deny) == 0 with input as data.plan_tags_expression
+}
+
+test_tags_references_complete_tags_all_pass if {
+	count(deny) == 0 with input as data.plan_tags_references_complete
+}
+
+test_tags_references_missing_key_denied if {
+	findings := {msg | some msg in deny with input as data.plan_tags_references_missing}
+	count(findings) == 1
+	some msg in findings
+	contains(msg, "aws_sns_topic.app")
+	contains(msg, "psd:owner")
+	contains(msg, "psd:repo")
+	not contains(msg, "psd:application")
+}
+
+test_tags_references_missing_key_on_noop_denied if {
+	some msg in deny with input as data.plan_tags_references_missing_noop
+	contains(msg, "aws_sns_topic.steady")
+	contains(msg, "psd:repo")
+}
+
+test_tags_references_unknown_tags_all_denied if {
+	some msg in deny with input as data.plan_tags_references_unknown
+	contains(msg, "aws_sns_topic.computed")
+	contains(msg, "unknown at plan")
 }
 
 # The template's own default_tags shape: literal keys, variable values.
