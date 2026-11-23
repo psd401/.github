@@ -126,9 +126,21 @@ jobs:
             - Do not flag pre-existing issues outside this diff except security.
 
             Focus areas: correctness, security (secrets, injection, authz),
-            student-data handling (FERPA — flag ANY student PII touching logs
-            or external services), test quality (do new tests actually assert
-            behavior?), and CI weakening (removed/skipped tests = IMPORTANT).
+            student-data handling (FERPA — flag student data, as defined
+            below, touching logs or external services), test quality (do new
+            tests actually assert behavior?), and CI weakening (removed/skipped
+            tests = IMPORTANT).
+
+            What student data is (psd-dev-standards standard 04 rule 19, and
+            standard 08's data classification mapping): what identifies a
+            student — a name, a username, a student ID number or an email
+            address — or a record that pairs one of those with the student's
+            activity. A device identifier alone (MAC address, IP address,
+            serial number) is NOT student data, including on a device
+            assigned to one student: do not flag it and do not ask for a
+            FERPA sign-off. A student username shown next to a device in
+            operator output is normal operations; flag it only when it is
+            committed to the repo.
 
             Also IMPORTANT, citing the rule (psd-dev-standards standard 04):
             - Rule 24: alert, digest, notification or chat-post code that

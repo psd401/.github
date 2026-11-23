@@ -77,6 +77,9 @@ conftest test terraform/tfplan.json \
   --all-namespaces
 ```
 
+CI doesn't run this step: it needs a plan, and CI can't reach Proxmox, so the IaC owner runs it
+locally with the plan.
+
 No `policy/conftest/onprem-terraform` package exists yet (this PR's scope is
 `compose.rego` only), so that step is skipped until one ships -- a repo with
 no `terraform/` directory skips it too, by the same existence check.
@@ -168,6 +171,21 @@ which share the fixture file with its deliberately expired entry, stay green.
 | gcp | `deletion_policy.rego` | `deletion_policy = "PREVENT"` on `google_project`; `deletion_protection = true` on `google_sql_database_instance` |
 | onprem | `compose.rego` | pinned image tags (no `:latest`), `restart: unless-stopped` (one-shot carve-out below), container hardening (`cap_drop: [ALL]`, `no-new-privileges:true`, `read_only: true`, non-root numeric UID) on any service with published ports |
 
+`tags.rego` reads the tag keys from the aws provider's `default_tags` in
+`configuration.provider_config` when the plan exposes them there (a
+`constant_value` map, or a map of per-key expressions). Terraform 1.16.5
+plans a literal map with any variable value, and `tags = var.tags` or
+`merge(...)`, as `{"references": [...]}` with no keys. For that shape the
+rule checks the evaluated tags instead: every `hashicorp/aws` managed
+resource the plan leaves in place (create, update, replace, or no-op) that
+has a `tags_all` attribute must carry every required `psd:*` key, and the
+finding names the resource address and the missing keys. A key whose value
+is unknown at plan (`after_unknown.tags_all.<key>`) counts as present. A
+resource whose whole `tags_all` is unknown at plan, which the provider does
+when the resource's own `tags` are computed, is denied, since its keys
+cannot be checked. A plan with no taggable resources passes: nothing gets
+tagged. A provider block with no `default_tags` is still denied.
+
 `compose.rego`'s restart-policy rule carries two ways out, per
 15-onprem-platform.md rule 45: a one-shot task (`restart: "no"`) passes
 outright when it publishes no port and nothing else's `depends_on` names it
@@ -187,9 +205,6 @@ dependency anything waits on); anything else needs an active, unexpired
   inside a `lifecycle` block (`prevent_destroy`), since Terraform's plan
   JSON `configuration` representation does not expose `lifecycle` blocks as
   of 1.12.x -- that check would need a different mechanism than conftest.
-- `tags.rego` denies an aws provider whose `default_tags.tags` arrive with
-  only `references`. Terraform 1.16.5 plans a literal map that way too, so a
-  compliant root fails. The fix belongs on the `reese/iac-v0.3` branch.
 - `student_pii_destinations.rego` does not read an `aws_s3_bucket_policy`
   whose `policy` is unknown at plan time, such as one built from a new
   bucket's ARN. Such policies are common, so the rule does not fail closed on

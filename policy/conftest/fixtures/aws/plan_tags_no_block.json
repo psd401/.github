@@ -1,0 +1,17 @@
+{
+  "plan_tags_no_block": {
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "name": "aws",
+          "expressions": {
+            "region": {
+              "constant_value": "us-west-2"
+            }
+          }
+        }
+      }
+    },
+    "resource_changes": []
+  }
+}

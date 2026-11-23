@@ -5,6 +5,7 @@ Org-wide defaults and the **reusable workflow library** for Peninsula School Dis
 - Community health files (SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, PR/issue templates) apply to every repo that doesn't override them.
 - `.github/workflows/reusable-*.yml` — the org-standard CI, Claude review, OpenWiki, license, and security jobs. **Version pins (like OpenWiki's) live here once, org-wide.**
 - `reusable-deploy-ecs.yml` — build an image, push to ECR, register a task definition revision, run migrations as a one-off task, and roll an ECS Fargate service, through the caller's OIDC deploy role and GitHub environment protection. First used by psd-athletics.
+- `reusable-dependabot-auto-merge.yml`: turns on auto-merge for a Dependabot PR only when every update is a patch to a direct development dependency (standard 04 rule 4). It also requires that Dependabot wrote and signed every commit and that the base branch requires a status check. Callers run it from `on: pull_request` and pass their repo's merge method as `merge_method` (default `squash`). The file header has the caller block. A new reusable is a MINOR release ([RELEASING.md](RELEASING.md)).
 - `workflow-templates/` — starter workflows offered on every repo's Actions tab.
 - **Releases.** Callers pin each reusable to a release commit SHA (`@<sha> # vX.Y.Z`); their Dependabot opens bump PRs as new `vX.Y.Z` tags appear. How to cut one: [RELEASING.md](RELEASING.md).
 
@@ -48,7 +49,7 @@ jobs:
 
 ## IaC: `reusable-onprem-checks.yml`
 
-The CI contract for on-prem repos (Compose/systemd apps and Proxmox VMs): env-file check, redaction check, yamllint, Packer and Terraform validate, a Proxmox plan, conftest on Compose and Terraform, and the exceptions cross-check.
+The CI contract for on-prem repos (Compose/systemd apps and Proxmox VMs): env-file check, redaction check, yamllint, Terraform validate, conftest on Compose, and the exceptions cross-check, all on GitHub-hosted runners. It doesn't plan or apply: those can't reach Proxmox, and PSD runs no self-hosted runner for it, so the IaC owner plans and applies by hand.
 
 ```yaml
 jobs:
@@ -57,14 +58,11 @@ jobs:
     with:
       working_directory: .
       tier: b-internal
-      self_hosted_runner: false
     secrets:
       PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
-      PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
 ```
 
-- Inputs: `working_directory` (required), `tier`, `self_hosted_runner`, `tooling_ref` (same meaning as above). Secrets: `PSD_ENV_FILE_CONTENTS` and `PROXMOX_API_TOKEN` (both required).
-- `packer-validate` and `plan` run only with `self_hosted_runner: true`, on a `[self-hosted, proxmox]` runner. That runner needs `python3` with the `venv` module; the plan job builds a hash-locked venv from it.
+- Inputs: `working_directory` (required), `tier`, `tooling_ref` (same meaning as above). Secret: `PSD_ENV_FILE_CONTENTS` (required). `self_hosted_runner` and `PROXMOX_API_TOKEN` are accepted and ignored, so older callers don't fail.
 - The policy tests run in CI (`iac-tests.yml`): `conftest verify --policy policy/conftest/<platform> --data policy/conftest/fixtures/<platform>` for `aws`, `gcp` and `onprem`.
 
 Standards source of truth: the internal `psd-dev-standards` repo.

@@ -1,0 +1,6 @@
+{
+  "name": "PSD Dependabot auto-merge",
+  "description": "Auto-merge Dependabot PRs that only patch development dependencies, once required checks pass (standards/04-security.md rule 4)",
+  "iconName": "git-merge",
+  "categories": ["dependency-management"]
+}
