@@ -33,6 +33,10 @@ package aws
 # it is skipped and reported as a warn, which does not fail the job; the next
 # plan reads its applied JSON from prior_state and checks it then.
 #
+# A document marked sensitive arrives null and cannot be read either; unlike
+# an unknown one it never becomes readable, so it is denied (see
+# sensitive_policy_where).
+#
 # Attaching an AWS managed policy that grants SES send on every resource
 # (ses_managed_send_policies.rego) is denied in every attachment form.
 #
@@ -235,6 +239,64 @@ warn contains msg if {
 	rc.type == "aws_iam_role"
 	inline_policy_unknown(rc)
 	msg := sprintf("%s: an inline_policy is unknown until apply, so its SES send permissions (17-email-sending.md rule 9) were not checked; review it by hand", [rc.address])
+}
+
+# A policy document Terraform marks sensitive (built from a sensitive value)
+# reaches this rule as null: scripts/iac/redact_plan.py masks it before the
+# plan leaves the plan job, and the readers above skip anything not a string.
+# It would pass with no deny and no warn, so it is denied: an IAM policy
+# document is not a secret, and nonsensitive() keeps it checkable. Read from
+# after_sensitive for resources the plan creates or updates, and from the
+# sensitive_values the redactor keeps in prior_state for the rest.
+inline_policy_sensitive(s) if s == true
+
+inline_policy_sensitive(s) if {
+	is_array(s)
+	some ip in s
+	ip == true
+}
+
+inline_policy_sensitive(s) if {
+	is_array(s)
+	some ip in s
+	ip.policy == true
+}
+
+sensitive_policy_where contains rc.address if {
+	some rc in iam_policy_changes
+	rc.type in iam_policy_types
+	rc.change.after_sensitive.policy == true
+}
+
+sensitive_policy_where contains rc.address if {
+	some rc in iam_policy_changes
+	rc.type == "aws_iam_role"
+	inline_policy_sensitive(rc.change.after_sensitive.inline_policy)
+}
+
+prior_iam_resources contains r if {
+	walk(input.prior_state.values, [path, r])
+	count(path) >= 2
+	path[count(path) - 2] == "resources"
+	r.mode == "managed"
+	not r.address in changing_addresses
+}
+
+sensitive_policy_where contains r.address if {
+	some r in prior_iam_resources
+	r.type in iam_policy_types
+	r.sensitive_values.policy == true
+}
+
+sensitive_policy_where contains r.address if {
+	some r in prior_iam_resources
+	r.type == "aws_iam_role"
+	inline_policy_sensitive(r.sensitive_values.inline_policy)
+}
+
+deny contains msg if {
+	some where in sensitive_policy_where
+	msg := sprintf("%s: the IAM policy document is marked sensitive, so the plan artifact carries it as null and its SES send permissions (17-email-sending.md rule 9) cannot be checked; an IAM policy is not a secret, so wrap the document in nonsensitive() or stop building it from a sensitive value", [where])
 }
 
 # Attachment forms (hashicorp/aws resource docs, read 2026-11-09): one ARN in

@@ -217,7 +217,8 @@ def test_data_source_literals_are_masked(tmp_path):
 def test_prior_state_keeps_only_iam_resources_and_attributes(tmp_path):
     """ses_send.rego reads unchanged IAM policies and attachments from
     prior_state; everything else in it is dropped, and sensitive_values still
-    masks what is kept."""
+    masks what is kept. The kept attributes' sensitive_values stay, so
+    ses_send.rego can deny a sensitive document instead of reading null."""
     S = "SENTINEL_hunter2"
     policy = '{"Statement": []}'
     plan = {"prior_state": {"format_version": "1.0", "values": {"root_module": {
@@ -251,7 +252,7 @@ def test_prior_state_keeps_only_iam_resources_and_attributes(tmp_path):
              "values": {"inline_policy": [{"name": "i", "policy": policy}],
                         "managed_policy_arns": ["arn:aws:iam::aws:policy/ReadOnlyAccess"]}},
             {"address": "aws_iam_policy.p", "mode": "managed", "type": "aws_iam_policy", "name": "p",
-             "values": {"policy": None}}],
+             "values": {"policy": None}, "sensitive_values": {"policy": True}}],
         "child_modules": [
             {"address": "module.m", "resources": [
                 {"address": "module.m.aws_iam_policy_attachment.a", "mode": "managed",

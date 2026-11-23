@@ -287,6 +287,13 @@ jobs:
       # runs this workflow twice in one run (dev and prod), so a bare
       # tfplan-<run-id> name would collide.
       artifact_name: ${{ steps.artifact.outputs.name }}
+      # SHA-256 of each derived file as the resolve step wrote it, or
+      # "absent". The conftest job checks the downloaded files against these:
+      # caller code that runs during terraform plan (a data "external"
+      # program, say) can rewrite a file in working_directory before the
+      # upload, but not a finished step's outputs.
+      student_pii_sha256: ${{ steps.resolve.outputs.student_pii_sha256 }}
+      ses_sha256: ${{ steps.resolve.outputs.ses_sha256 }}
     defaults:
       run:
         working-directory: ${{ inputs.working_directory }}
@@ -394,7 +401,10 @@ jobs:
       # GITHUB_ENV, including TF_VAR_student_pii with the custom identifier
       # regexes, shows in the env: block of each later step's log in the
       # caller repo.
+      # Both derived files hold cloud.aws data, so only aws plans write them;
+      # a gcp plan artifact carries neither.
       - name: Resolve private environment file (backend.hcl, TF_VAR_*)
+        id: resolve
         env:
           PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
           PLATFORM: ${{ inputs.platform }}
@@ -408,13 +418,21 @@ jobs:
           tmpdir="$(mktemp -d)"
           trap 'rm -rf "$tmpdir"' EXIT
           printf '%s' "$PSD_ENV_FILE_CONTENTS" | base64 -d > "$tmpdir/env.yml"
+          derived=()
+          if [ "$PLATFORM" = aws ]; then
+            derived=(--student-pii-out student-pii-account.json --ses-out ses-from-addresses.json)
+          fi
           python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/resolve_env_file.py" \
             --env-file "$tmpdir/env.yml" --github-env "$GITHUB_ENV" \
             --platform "$PLATFORM" --environment "$ENVIRONMENT" \
             --account-alias "$ACCOUNT_ALIAS" --repo "$REPO_NAME" \
             --region "$AWS_REGION" --backend-out backend.hcl \
-            --student-pii-out student-pii-account.json \
-            --ses-out ses-from-addresses.json
+            ${derived[@]+"${derived[@]}"}
+          for pair in student_pii:student-pii-account.json ses:ses-from-addresses.json; do
+            f="${pair#*:}"
+            if [ -f "$f" ]; then sum="$(sha256sum "$f" | cut -d" " -f1)"; else sum=absent; fi
+            echo "${pair%%:*}_sha256=$sum" >> "$GITHUB_OUTPUT"
+          done
 
       - name: terraform init
         run: |
@@ -639,6 +657,29 @@ jobs:
         with:
           name: ${{ needs.plan.outputs.artifact_name }}
           path: ${{ runner.temp }}/plan
+
+      # The plan job recorded each derived file's SHA-256 as the resolve step
+      # wrote it. A mismatch, or a file the resolve step did not write, means
+      # something in the plan job rewrote it after that step (caller code runs
+      # during terraform plan), so the rules would read data the environment
+      # file never held.
+      - name: Check the derived files are the ones the plan job resolved
+        env:
+          WANT_STUDENT_PII: ${{ needs.plan.outputs.student_pii_sha256 }}
+          WANT_SES: ${{ needs.plan.outputs.ses_sha256 }}
+        run: |
+          set -eu
+          bad=0
+          for pair in "student-pii-account.json:$WANT_STUDENT_PII" "ses-from-addresses.json:$WANT_SES"; do
+            f="$RUNNER_TEMP/plan/${pair%%:*}"
+            want="${pair#*:}"
+            if [ -f "$f" ]; then got="$(sha256sum "$f" | cut -d" " -f1)"; else got=absent; fi
+            if [ -z "$want" ] || [ "$got" != "$want" ]; then
+              echo "::error::${pair%%:*} in the plan artifact is not the file the resolve step wrote (expected ${want:-no record}, got $got)"
+              bad=1
+            fi
+          done
+          exit "$bad"
 
       # tooling_ref picks which commit of this repo's helpers runs with this
       # job's token and secrets. It reaches the shell only through env, and

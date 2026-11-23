@@ -430,7 +430,8 @@ test_ses_unusable_from_list_shapes_denied if {
 # scripts/iac/fixtures/plan_prior_state_raw.json (asserted by
 # test_prior_state_end_to_end_fixture_matches_redactor_output), so the
 # prior_state the CI artifact keeps is enough to deny an unchanged bad policy
-# and an unchanged managed-policy attachment.
+# and an unchanged managed-policy attachment, and to deny an unchanged policy marked
+# sensitive, which it carries as null with sensitive_values.policy = true.
 test_ses_redacted_plan_denies_unchanged_bad_policy if {
 	denies := ses_deny_on(data.plan_redacted_prior_state)
 	some star in denies
@@ -440,5 +441,61 @@ test_ses_redacted_plan_denies_unchanged_bad_policy if {
 	some attach in denies
 	startswith(attach, "module.mail.aws_iam_role_policy_attachment.full: attaches arn:aws:iam::aws:policy/AmazonSESFullAccess")
 	count({m | some m in denies; contains(m, "aws_iam_role.app")}) == 0
-	count({m | some m in denies; contains(m, "secret_doc")}) == 0
+	some secret in denies
+	startswith(secret, "aws_iam_policy.secret_doc: the IAM policy document is marked sensitive")
+}
+
+# A policy marked sensitive arrives null after redact_plan.py, so it can't be
+# read; it is denied rather than passed as "no grant".
+sensitive_rc(type, after, after_sensitive) := {
+	"address": sprintf("%s.secret", [type]),
+	"type": type,
+	"mode": "managed",
+	"change": {"actions": ["create"], "after": after, "after_unknown": {}, "after_sensitive": after_sensitive},
+}
+
+denied_as_sensitive(rc) if {
+	some msg in ses_deny_on(ses_plan([rc]))
+	contains(msg, "the IAM policy document is marked sensitive")
+}
+
+test_ses_sensitive_policy_denied if {
+	every type in iam_policy_types {
+		denied_as_sensitive(sensitive_rc(type, {"policy": null}, {"policy": true}))
+	}
+}
+
+test_ses_role_sensitive_inline_policy_denied if {
+	denied_as_sensitive(sensitive_rc("aws_iam_role", {"inline_policy": [{"name": "send", "policy": null}]}, {"inline_policy": [{"policy": true}]}))
+}
+
+test_ses_role_wholly_sensitive_inline_policy_denied if {
+	denied_as_sensitive(sensitive_rc("aws_iam_role", {"inline_policy": null}, {"inline_policy": true}))
+}
+
+test_ses_policy_not_marked_sensitive_passes if {
+	rc := sensitive_rc("aws_iam_role_policy", {"policy": policy_doc([ses_stmt({})])}, {"policy": false})
+	count(ses_deny_on(ses_plan([rc]))) == 0
+}
+
+test_ses_sensitive_tags_alone_pass if {
+	rc := sensitive_rc("aws_iam_policy", {"policy": policy_doc([ses_stmt({})]), "tags": null}, {"tags": true})
+	count(ses_deny_on(ses_plan([rc]))) == 0
+}
+
+test_ses_prior_state_sensitive_policy_denied if {
+	plan := {
+		"configuration": {"provider_config": {}},
+		"resource_changes": [],
+		"prior_state": {"values": {"root_module": {"resources": [{
+			"address": "aws_iam_policy.secret",
+			"mode": "managed",
+			"type": "aws_iam_policy",
+			"name": "secret",
+			"values": {"policy": null},
+			"sensitive_values": {"policy": true},
+		}]}}},
+	}
+	some msg in ses_deny_on(plan)
+	startswith(msg, "aws_iam_policy.secret: the IAM policy document is marked sensitive")
 }

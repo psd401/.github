@@ -51,7 +51,10 @@ script's `--ses-out`: `cloud.aws.ses.approved_from_addresses` from the
 environment file, which `ses_send.rego` reads as `data.ses_from_addresses`.
 The workflow passes either file only when the plan artifact holds it; a
 missing file is then denied by the rule that needs it, not by a conftest
-loader error.)
+loader error. Only aws plans write the two files. The plan job records
+each one's SHA-256 as the resolve step wrote it, and the conftest job fails
+when the artifact's copy differs, since caller code that runs during
+`terraform plan` could rewrite it.)
 
 On-prem, against the compose project's resolved config, not a Terraform
 plan. `templates/onprem-app` keeps `docker-compose.yml` at the repo root
@@ -211,7 +214,9 @@ dependency anything waits on); anything else needs an active, unexpired
   them.
 - `redact_plan.py` masks values a provider marks sensitive. A masked ECS
   `container_definitions` or Lambda `environment` hides the log-driver and
-  OpenTelemetry checks.
+  OpenTelemetry checks. A masked IAM policy document is denied by
+  `ses_send.rego` instead, since it can't be checked; wrap it in
+  `nonsensitive()`.
 - OPA drops a `telemetry-layers.yml` row whose `match` is not valid RE2
   without an error. Only the conftest-backed case in
   `scripts/iac/test_telemetry_layers.py` catches it.
