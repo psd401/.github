@@ -241,6 +241,18 @@ jobs:
           BEDROCK_KEY: ${{ secrets.BEDROCK_API_KEY }}
           OPENWIKI_TELEMETRY_DISABLED: "1"
           DO_NOT_TRACK: "1"
+          # Output cap per model call. Without it a Bedrock ID such as
+          # us.anthropic.claude-sonnet-5-5 gets 4,096 tokens: openwiki sets its
+          # 16,384 default only for IDs starting "claude-", and
+          # @langchain/anthropic 1.5.12 falls back to 4,096 for a model it
+          # doesn't recognise by prefix. A plan for a repo with many areas
+          # doesn't fit, submit_plan arrives empty, and the run ends with
+          # "Repository planning worker exited without submit_plan"
+          # (PSD401/.github#89; upstream langchain-ai/openwiki#1046).
+          # 21000: openwiki 0.7.2 sends non-streaming requests, and the
+          # Anthropic SDK refuses those above 21,333 (#1046). 0.7.3+ streams;
+          # raise this with that bump.
+          OPENWIKI_MAX_OUTPUT_TOKENS: "21000"
         run: |
           first_build=false
           [ -f openwiki/.last-update.json ] || first_build=true
