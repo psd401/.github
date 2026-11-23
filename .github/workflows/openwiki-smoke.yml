@@ -10,6 +10,8 @@ on:
     paths:
       - .github/workflows/reusable-openwiki.yml
       - .github/workflows/openwiki-smoke.yml
+      # The locked CLI version; a pin bump must pass this before merge.
+      - tools/openwiki/**
   # Manual model test against any repo (dry run: nothing is pushed), e.g.
   # repository=psd401/proxmox-mcp model=us.anthropic.claude-sonnet-5-5.
   workflow_dispatch:
