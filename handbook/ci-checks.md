@@ -57,6 +57,23 @@ GitHub Actions patterns, and vulnerable dependency changes. It also checks the
 - **Workflow (zizmor) finding**: the log links to an explanation of the exact
   pattern and its fix.
 
+## auto-merge: Dependabot PRs
+
+This check runs only on Dependabot PRs, in repos that call
+`reusable-dependabot-auto-merge.yml`. It turns on auto-merge when every update is a
+patch to a direct development dependency. Otherwise it leaves the PR for you, and the
+job summary says why.
+
+- **It fails**: a GitHub API call failed, or the repo doesn't allow auto-merge or the
+  `merge_method` the caller passes. Re-run the job, or merge the PR yourself once CI
+  is green.
+- **It warns that the branch requires no status check**: auto-merge would not wait
+  for CI, so it stopped. Tell Technology Services, who manage the rulesets.
+- **It warns that it turned off auto-merge**: the PR changed after an earlier run
+  approved it. Review and merge it yourself.
+- **Its summary says auto-merge was left on**: a person or another app turned it on,
+  so this check leaves it alone. Whoever turned it on owns the merge.
+
 ## A check runs on the CodeBuild runner
 
 Some private repos run `psd-ci`, `security-scan` and their own lint and test jobs on the
