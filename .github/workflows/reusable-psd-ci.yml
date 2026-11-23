@@ -6,6 +6,26 @@
 # never `${{ }}`-interpolated into script bodies — raw interpolation is both
 # an injection surface and a syntax hazard when inputs are empty (caught by
 # the canary repo, 2026-08-14).
+#
+# Repo-specific gate jobs (psd-dev-standards standards/06 §2). A repo whose
+# gates can't run here (several stacks, service containers, browsers, macOS)
+# runs them as jobs in its own caller and passes their results in. The check
+# still reports as `psd-ci / psd-ci`, and the runtime-standard step still runs:
+#
+#   jobs:
+#     backend: { ... }
+#     e2e: { ... }
+#     psd-ci:
+#       if: always()          # run, and fail, when an upstream job fails
+#       needs: [backend, e2e]
+#       permissions: { contents: read }
+#       uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@<sha> # vX.Y.Z
+#       with:
+#         upstream-results: ${{ join(needs.*.result, ' ') }}
+#         gate: "off"         # or leave auto to also run the standard gate
+#
+# `if: always()` matters: without it a failed upstream job skips the caller,
+# and a skipped job counts as passing a required check.
 name: Reusable PSD CI
 
 on:
@@ -48,6 +68,14 @@ on:
         description: "gitleaks full-history secret scan: warn | fail | off. Off by default: reusable-security-scan.yml already runs gitleaks over full history with the org rules on the same commit, and every job bills at least one minute (psd-dev-standards standards/06 §4, Runner minutes)"
         type: string
         default: "off"
+      upstream-results:
+        description: "Results of the caller's own gate jobs, space-separated: pass join(needs.*.result, ' ') in an expression, with if: always() on the caller job. Empty (default): no upstream jobs, nothing checked. Otherwise psd-ci fails unless every word is success (failure, cancelled and skipped all fail). psd-dev-standards standards/06 §2"
+        type: string
+        default: ""
+      gate:
+        description: "auto (default): run install, lint, typecheck, build and test in working-directory. off: skip them, for a repo whose gates all run upstream; valid only when upstream-results is non-empty. The runtime-standard step runs either way, and the secret-scan job follows secret-scan-mode either way"
+        type: string
+        default: "auto"
 
 jobs:
   run:
@@ -72,6 +100,23 @@ jobs:
         with:
           persist-credentials: false
 
+      # Fails fast on a bad gate value, and on gate: off with no upstream
+      # results, so a repo can't switch every gate off.
+      - name: Check gate inputs
+        env:
+          GATE: ${{ inputs.gate }}
+          UPSTREAM_RESULTS: ${{ inputs.upstream-results }}
+        run: |
+          case "$GATE" in
+            auto|off) ;;
+            *) echo "::error::gate must be auto or off (got '$GATE')"; exit 1 ;;
+          esac
+          if [ "$GATE" = "off" ] && [ -z "$(printf '%s' "$UPSTREAM_RESULTS" | tr -d '[:space:]')" ]; then
+            echo "::error::gate: off needs upstream-results (join(needs.*.result, ' ') from the caller). Without upstream jobs it would run no gate at all."
+            exit 1
+          fi
+          echo "gate: $GATE"
+
       - name: Detect package manager
         id: pm
         run: |
@@ -87,15 +132,15 @@ jobs:
           echo "Detected: $pm"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: contains(fromJSON('["npm","npm-nolock","pnpm","yarn"]'), steps.pm.outputs.pm)
+        if: inputs.gate != 'off' && contains(fromJSON('["npm","npm-nolock","pnpm","yarn"]'), steps.pm.outputs.pm)
         with:
           node-version: ${{ inputs.node-version }}
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        if: steps.pm.outputs.pm == 'bun'
+        if: inputs.gate != 'off' && steps.pm.outputs.pm == 'bun'
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        if: steps.pm.outputs.pm == 'uv'
+        if: inputs.gate != 'off' && steps.pm.outputs.pm == 'uv'
 
       - name: Runtime standard (bun for JS/TS, uv for Python — standards/02)
         env:
@@ -118,7 +163,31 @@ jobs:
             echo "runtime standard: compliant"
           fi
 
+      # The rollup the caller's own jobs feed. Runs before the gate, so a
+      # failed upstream job fails psd-ci without spending minutes on install
+      # and tests. A skipped upstream job fails too: a skip would otherwise
+      # pass the required check.
+      - name: Upstream gate jobs
+        env:
+          UPSTREAM_RESULTS: ${{ inputs.upstream-results }}
+        run: |
+          if [ -z "$(printf '%s' "$UPSTREAM_RESULTS" | tr -d '[:space:]')" ]; then
+            echo "upstream jobs: none"
+            exit 0
+          fi
+          echo "upstream job results: $UPSTREAM_RESULTS"
+          bad=0
+          set -f # split on whitespace only; never glob a word
+          for result in $UPSTREAM_RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::An upstream gate job did not succeed ($result)."
+              bad=1
+            fi
+          done
+          exit "$bad"
+
       - name: Install
+        if: inputs.gate != 'off'
         env:
           PM: ${{ steps.pm.outputs.pm }}
           INSTALL_CMD: ${{ inputs.install-command }}
@@ -138,6 +207,7 @@ jobs:
           esac
 
       - name: Run gate
+        if: inputs.gate != 'off'
         env:
           PM: ${{ steps.pm.outputs.pm }}
           LINT_CMD: ${{ inputs.lint-command }}
