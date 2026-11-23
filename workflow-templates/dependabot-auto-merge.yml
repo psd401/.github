@@ -11,6 +11,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: PSD401/.github/.github/workflows/reusable-dependabot-auto-merge.yml@6e5e24ce26be55aebe0b786f4190cda409d4d33a # v1.10.0
+    uses: PSD401/.github/.github/workflows/reusable-dependabot-auto-merge.yml@78358a20608aa2f4de77e23f183c3ec7e1bbe795 # v1.12.0
     with:
       merge_method: squash
