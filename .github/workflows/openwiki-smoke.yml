@@ -44,7 +44,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: ./.github/workflows/reusable-openwiki.yml
+    # ./ rather than the self-repository $/ form zizmor suggests: GitHub runs
+    # $/ (the smoke test passed with it on #87, 2026-11-23), but actionlint
+    # 1.7.12, the latest, rejects it as an invalid reusable workflow call.
+    uses: ./.github/workflows/reusable-openwiki.yml  # zizmor: ignore[self-repository]
     with:
       repository: ${{ inputs.repository || 'psd401/psd-standards-canary' }}
       base_branch: ${{ inputs.branch || 'main' }}
