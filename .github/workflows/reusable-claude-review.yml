@@ -107,6 +107,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run Claude Code Review
+        id: review
         if: steps.scope.outputs.skip != 'true'
         # Sonnet 5.5 needs Claude Code >= 2.1.280. The version stays a bare comment
         # so Dependabot keeps it current; #68 left it at v1.0.265 on v1.0.269.
@@ -166,4 +167,42 @@ jobs:
 
             Use `gh pr comment` with your Bash tool to leave the review as a
             single PR comment.
-          claude_args: '--model ${{ inputs.model }} --max-turns ${{ inputs.max_turns }} --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+
+            After posting it, return important_open: the number of IMPORTANT
+            findings your comment reports as new or still unresolved (on a
+            first review, every IMPORTANT finding; 0 when there are none).
+            Earlier findings now fixed and nits don't count.
+          # --json-schema makes the result a validated structured_output, which
+          # the next step publishes, so the verdict is read as data, not prose.
+          claude_args: >-
+            --model ${{ inputs.model }} --max-turns ${{ inputs.max_turns }}
+            --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
+            --json-schema '{"type":"object","properties":{"important_open":{"type":"integer","minimum":0}},"required":["important_open"],"additionalProperties":false}'
+
+      # One annotation on this check run carries the verdict: the count of
+      # IMPORTANT findings open, skipped-openwiki, or error when the review
+      # returned no valid count. A tool reads it through the check-run
+      # annotations API instead of parsing the comment. Only the validated
+      # number is printed, never model text a PR can steer. This step never fails
+      # the job on findings (standards/03 rule 6), and a failed review step
+      # still fails the job: this step can't change that.
+      - name: Publish IMPORTANT count
+        if: ${{ !cancelled() }}
+        env:
+          SKIP: ${{ steps.scope.outputs.skip }}
+          VERDICT: ${{ steps.review.outputs.structured_output }}
+        run: |
+          if [ "$SKIP" = "true" ]; then
+            n=skipped-openwiki
+          else
+            n=$(printf '%s' "$VERDICT" | jq -r '
+              if type == "object"
+                and keys == ["important_open"]
+                and (.important_open | type) == "number"
+                and .important_open >= 0 and .important_open < 1000
+                and .important_open == (.important_open | floor)
+              then .important_open | floor
+              else "error" end' 2>/dev/null) || n=error
+            case "$n" in "" | *[!0-9]*) n=error ;; esac
+          fi
+          echo "::notice title=claude-review-important::$n"
