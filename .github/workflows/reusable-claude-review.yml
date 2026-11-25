@@ -107,7 +107,14 @@ jobs:
           fetch-depth: 1
 
       - name: Run Claude Code Review
+        id: review
         if: steps.scope.outputs.skip != 'true'
+        # With --json-schema the action fails this step when a review that
+        # otherwise finished returns no count. That must not turn the check
+        # red (standards/03 rule 6; Kris, 2026-11-25), so the step fails
+        # softly and the publish step below decides: only that case passes,
+        # and every other failure of this step still fails the job.
+        continue-on-error: true
         # Sonnet 5.5 needs Claude Code >= 2.1.280. The version stays a bare comment
         # so Dependabot keeps it current; #68 left it at v1.0.265 on v1.0.269.
         uses: anthropics/claude-code-action@4d75e5f390ee76b2e09c1980ecc99ff3a2e088c8 # v1.0.275
@@ -118,7 +125,10 @@ jobs:
           use_bedrock: "true"
           allowed_bots: "dependabot"
           prompt: |
-            Review this pull request per PSD engineering standards:
+            Review pull request #${{ github.event.pull_request.number }} in
+            this repository per PSD engineering standards. Review only this
+            pull request: read, discuss and comment on no other pull request
+            or issue.
 
             Findings must be severity-tiered:
             - IMPORTANT (fix before merge): correctness bugs, security issues,
@@ -186,6 +196,80 @@ jobs:
             ${{ inputs.extra_prompt }}
             ${{ github.event.action == 'synchronize' && 'This is a re-review after new commits. Read your earlier review comment on this PR (gh pr view --comments). Post only IMPORTANT findings that are new or still unresolved, say which earlier IMPORTANT findings are now fixed, and skip nits.' || '' }}
 
-            Use `gh pr comment` with your Bash tool to leave the review as a
-            single PR comment.
-          claude_args: '--model ${{ inputs.model }} --max-turns ${{ inputs.max_turns }} --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+            Use `gh pr comment ${{ github.event.pull_request.number }}` with
+            your Bash tool to leave the review as a single PR comment. Read the
+            PR with `gh pr view ${{ github.event.pull_request.number }}` and
+            `gh pr diff ${{ github.event.pull_request.number }}`; those are the
+            only gh commands you can run.
+
+            After posting it, return important_open: the number of IMPORTANT
+            findings your comment reports as new or still unresolved (on a
+            first review, every IMPORTANT finding; 0 when there are none).
+            Earlier findings now fixed and nits don't count.
+          # Every allowed gh command is bound to this event's PR number. A
+          # canary review of one PR (psd-standards-canary#38, 2026-11-25) also
+          # posted a review on another (#39) through the old unbound
+          # `gh pr comment:*`; Kris ruled the reviewer is locked to its own PR
+          # (2026-11-25). `gh pr list`, `gh issue view/list` and `gh search`
+          # are gone: each can read another PR. Claude Code matches `X:*` as
+          # `X *` (a space after the number, so 38 doesn't match 380) and
+          # checks each part of a compound command on its own
+          # (code.claude.com/docs/en/permissions, read 2026-11-25). Unlisted
+          # commands are denied because allowed_bots keeps the action out of
+          # auto mode (src/modes/permission-mode.ts at the pinned SHA).
+          # --json-schema makes the result a validated structured_output, which
+          # the next step publishes, so the verdict is read as data, not prose.
+          claude_args: >-
+            --model ${{ inputs.model }} --max-turns ${{ inputs.max_turns }}
+            --allowed-tools "Bash(gh pr comment ${{ github.event.pull_request.number }}:*),Bash(gh pr diff ${{ github.event.pull_request.number }}:*),Bash(gh pr view ${{ github.event.pull_request.number }}:*)"
+            --json-schema '{"type":"object","properties":{"important_open":{"type":"integer","minimum":0}},"required":["important_open"],"additionalProperties":false}'
+
+      # One annotation on this check run carries the verdict: the count of
+      # IMPORTANT findings open, skipped-openwiki, or error when the review
+      # returned no valid count. A tool reads it through the check-run
+      # annotations API instead of parsing the comment. Only the validated
+      # number is printed, never model text a PR can steer. This step never
+      # fails the job on findings (standards/03 rule 6). It also passes a
+      # review that finished but returned no count: the action's own result
+      # message (subtype success, not is_error, within max_turns) shows that
+      # was the only failure. Any other failure of the review step fails the
+      # job here, as it did before the step failed softly.
+      - name: Publish IMPORTANT count
+        if: ${{ !cancelled() }}
+        env:
+          SKIP: ${{ steps.scope.outputs.skip }}
+          VERDICT: ${{ steps.review.outputs.structured_output }}
+          OUTCOME: ${{ steps.review.outcome }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+          MAX_TURNS: ${{ inputs.max_turns }}
+        run: |
+          if [ "$SKIP" = "true" ]; then
+            n=skipped-openwiki
+          else
+            n=$(printf '%s' "$VERDICT" | jq -r '
+              if type == "object"
+                and keys == ["important_open"]
+                and (.important_open | type) == "number"
+                and .important_open >= 0 and .important_open < 1000
+                and .important_open == (.important_open | floor)
+              then .important_open | floor
+              else "error" end' 2>/dev/null) || n=error
+            case "$n" in "" | *[!0-9]*) n=error ;; esac
+          fi
+          echo "::notice title=claude-review-important::$n"
+          if [ "$OUTCOME" = "failure" ]; then
+            finished=false
+            if [ "$n" = "error" ] && [ -f "$EXECUTION_FILE" ] && jq -e --argjson max "$MAX_TURNS" '
+                [.[] | select(type == "object" and .type == "result")] | last
+                | type == "object" and .subtype == "success" and .is_error == false
+                  and (.num_turns | type) == "number" and .num_turns <= $max
+              ' "$EXECUTION_FILE" >/dev/null 2>&1; then
+              finished=true
+            fi
+            if [ "$finished" = "true" ]; then
+              echo "The review finished but returned no IMPORTANT count; the check passes (standards/03 rule 6)." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Run Claude Code Review failed; see that step's log." >&2
+              exit 1
+            fi
+          fi
