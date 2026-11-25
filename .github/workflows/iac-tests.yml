@@ -10,6 +10,7 @@ on:
       - workflow-templates/**
       - .github/actionlint.yaml
       - policy/**
+      - prices/**
       - schemas/iac/**
       - scripts/iac/**
       - tools/iac/**

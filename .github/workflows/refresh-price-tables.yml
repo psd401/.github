@@ -1,0 +1,78 @@
+# ABOUTME: Weekly: rebuilds prices/aws/ from the public AWS Price List and opens (or updates) one PR
+# ABOUTME: when any price changed. cost-diff in reusable-iac-checks.yml reads these tables.
+#
+# standards/12-cloud-cost.md rule 12. The source files are public
+# (pricing.us-east-1.amazonaws.com, no credentials), so nothing here signs in
+# to AWS or any other service. A caller gets the tables at the release it
+# pins, so after merging a refresh, cut a release (RELEASING.md) as for any
+# other change.
+#
+# The PR comes from psd-automation: Actions' own token can't open PRs in this
+# org ("Allow GitHub Actions to create and approve pull requests" is off).
+# prices/ is not under .github/workflows, so the app's contents and
+# pull-requests permissions are enough.
+name: Refresh price tables
+
+on:
+  schedule:
+    - cron: "0 14 * * 1" # Mondays 14:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-price-tables
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Mint automation app token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.PSD_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: PSD401
+          repositories: .github
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # Standard library only; streams the ~300 MB EC2 file row by row.
+      - name: Build the tables
+        run: python3 scripts/iac/build_price_table.py --out-dir prices/aws
+
+      - name: Open or update the refresh PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: automation/refresh-price-tables
+        run: |
+          set -eu
+          if git diff --quiet -- prices/; then
+            echo "No price changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git diff --stat -- prices/ >> "$GITHUB_STEP_SUMMARY"
+          git config user.name "psd-automation[bot]"
+          git config user.email "psd-automation[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add prices/
+          git commit -q -m "Refresh AWS price tables from the AWS Price List"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          if [ -z "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main \
+              --title "Refresh AWS price tables" \
+              --body "Weekly rebuild of \`prices/aws/\` from the public AWS Price List (\`scripts/iac/build_price_table.py\`). Each table's \`sources\` records the publication date of every file it read. After merging, cut a release so callers pick it up (RELEASING.md)."
+          fi

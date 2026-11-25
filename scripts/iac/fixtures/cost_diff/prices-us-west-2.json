@@ -1,0 +1,22 @@
+{
+ "aurora_serverless_v2_acu_hourly": {"Aurora PostgreSQL": {"io_optimized": 0.16, "standard": 0.12}},
+ "cloudwatch_alarm_month": {"composite": 0.5, "high_resolution": 0.3, "standard": 0.1},
+ "currency": "USD",
+ "dynamodb_rcu_hourly": 0.00013,
+ "dynamodb_wcu_hourly": 0.00065,
+ "ebs_gb_month": {"gp2": 0.1, "gp3": 0.08, "io1": 0.125},
+ "ebs_gp3_throughput_mibps_month": 0.04,
+ "ebs_iops_month": {"gp3": 0.005, "io1": 0.065},
+ "ec2_instance_hourly": {"Linux": {"t4g.small": 0.0168}, "Windows": {"t3.medium": 0.06}},
+ "elb_hourly": {"application": 0.0225, "network": 0.0225},
+ "kms_key_month": 1.0,
+ "nat_gateway_hourly": 0.045,
+ "public_ipv4_hourly": 0.005,
+ "rds_instance_hourly": {"PostgreSQL": {"Multi-AZ": {"db.t4g.micro": 0.032}, "Single-AZ": {"db.t4g.micro": 0.016}}, "Aurora PostgreSQL": {"Single-AZ": {"db.r6g.large": 0.26}}},
+ "rds_storage_gb_month": {"PostgreSQL": {"Multi-AZ": {"gp3": 0.23}, "Single-AZ": {"gp3": 0.115}}},
+ "region": "us-west-2",
+ "route53_hosted_zone_month": 0.5,
+ "secretsmanager_secret_month": 0.4,
+ "sources": {"AmazonEC2": {"publication_date": "2026-11-24T23:14:17Z", "url": "fixture", "version": "20261124231417"}},
+ "vpc_endpoint_hourly": 0.01
+}

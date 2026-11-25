@@ -28,7 +28,7 @@ jobs:
 
 ## IaC: `reusable-iac-checks.yml`
 
-The CI and apply contract for Terraform repos on AWS or GCP: env-file check, redaction check, fmt/validate/tflint, plan (redacted, sealed to `plan_recipient` with age), checkov, conftest against [`policy/conftest/`](policy/conftest/), infracost, and an environment-gated apply. The file header has the full caller block for a plan-only call and an applying call.
+The CI and apply contract for Terraform repos on AWS or GCP: env-file check, redaction check, fmt/validate/tflint, plan (redacted, sealed to `plan_recipient` with age), checkov, conftest against [`policy/conftest/`](policy/conftest/), a monthly cost diff priced from the AWS Price List tables in [`prices/aws/`](prices/aws/) (no service or key), and an environment-gated apply. The file header has the full caller block for a plan-only call and an applying call.
 
 ```yaml
 jobs:
@@ -41,10 +41,9 @@ jobs:
       tier: b-internal
     secrets:
       PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
-      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 ```
 
-- Inputs: `working_directory` (required), `environment`, `platform` (`aws`/`gcp`), `tier`, `aws_region`, `plan_role_arn`, `apply_role_arn`, `apply`, `plan_recipient`, `account_alias`, `tooling_ref`. Secrets: `PSD_ENV_FILE_CONTENTS` (required), `INFRACOST_API_KEY`, `PSD_PLAN_KEY`.
+- Inputs: `working_directory` (required), `environment`, `platform` (`aws`/`gcp`), `tier`, `aws_region`, `plan_role_arn`, `apply_role_arn`, `apply`, `plan_recipient`, `account_alias`, `tooling_ref`. Secrets: `PSD_ENV_FILE_CONTENTS` (required), `PSD_PLAN_KEY`. `INFRACOST_API_KEY` is accepted and ignored.
 - `policy/`, `scripts/iac/`, `schemas/iac/` and `tools/iac/` load from the pinned commit. `tooling_ref` overrides that ref; leave it empty except to test a change to those paths.
 - Python helpers install from `tools/iac/requirements.txt` with `pip --require-hashes` (yamllint, in the on-prem reusable, from `tools/iac/requirements-yamllint.txt`); age and conftest install through `scripts/iac/install_*.sh`, which check a pinned SHA-256.
 
