@@ -55,7 +55,7 @@ on:
         default: "auto"   # runs `build` script if present
       test-command:
         type: string
-        default: "auto"   # runs `test` script if present; a repo with no tests FAILS (standards/05-testing.md)
+        default: "auto"   # runs `test` script if present; a repo with no tests FAILS (standards/05-testing.md). "" also FAILS unless allow-no-tests is true or upstream-results is set
       allow-no-tests:
         description: "Tier C escape hatch only"
         type: boolean
@@ -215,6 +215,7 @@ jobs:
           BUILD_CMD: ${{ inputs.build-command }}
           TEST_CMD: ${{ inputs.test-command }}
           ALLOW_NO_TESTS: ${{ inputs.allow-no-tests }}
+          UPSTREAM_RESULTS: ${{ inputs.upstream-results }}
         run: |
           set -e
           has_script() { [ -f package.json ] && node -e "process.exit((require('./package.json').scripts||{})['$1'] ? 0 : 1)"; }
@@ -267,6 +268,16 @@ jobs:
             fi
           elif [ -n "$TEST_CMD" ]; then
             echo "== test (custom)"; eval "$TEST_CMD"
+          # An empty test-command used to skip tests without failing, which
+          # let a caller pass gate 3 with no tests run (psd-dev-standards
+          # standards/05-testing.md, CIO decision 2026-11-25).
+          elif [ "$ALLOW_NO_TESTS" = "true" ]; then
+            echo "::warning::test-command is empty; tests skipped (allowed: allow-no-tests)"
+          elif [ -n "$(printf '%s' "$UPSTREAM_RESULTS" | tr -d '[:space:]')" ]; then
+            echo "== test: test-command is empty; the caller's upstream gate jobs run the tests"
+          else
+            echo "::error::test-command is empty, so no tests would run. Give a test command, run the tests in an upstream gate job (upstream-results), or set allow-no-tests: true (Tier C only). standards/05-testing.md gate 3."
+            exit 1
           fi
 
   # Off unless a caller sets secret-scan-mode: security-scan runs the org's
