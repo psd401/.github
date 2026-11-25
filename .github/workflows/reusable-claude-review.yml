@@ -155,6 +155,12 @@ jobs:
               Elasticsearch, Splunk or Security Lake queries/rules), outside
               CrowdStrike Falcon NG-SIEM. A log store used only as a feed,
               cache or measuring bench is fine.
+            - Rule 19: a staff member's name added anywhere in the repo
+              (a doc, a config comment, a test fixture, a staff-format
+              email address), except where it records who decided or did
+              something on a date ("Decided (name, date)", a change entry's
+              approver, an audit file). Staff appear by role. Commit author
+              fields and GitHub logins are fine.
             - Rule 15a: a backup encrypted with a key that only one person or
               one machine holds. The key needs a second custodian (for
               example a second copy in the team's password manager), or the
