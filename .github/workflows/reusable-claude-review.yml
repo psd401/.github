@@ -155,6 +155,22 @@ jobs:
               Elasticsearch, Splunk or Security Lake queries/rules), outside
               CrowdStrike Falcon NG-SIEM. A log store used only as a feed,
               cache or measuring bench is fine.
+            - Rule 15a: a backup encrypted with a key that only one person or
+              one machine holds. The key needs a second custodian (for
+              example a second copy in the team's password manager), or the
+              backup can't be restored.
+
+            Also IMPORTANT, citing the rule (psd-dev-standards standard 22,
+            documentation and knowledge), for documentation the diff adds:
+            - Rule 16, do not keep: live state (leases, counters, sessions),
+              verbatim vendor documentation (keep a pointer and what we
+              verified instead), session narration or chat transcripts. A
+              vendor file a tool reads as data (an API specification) is
+              data, not documentation: keep it with its source and version.
+            - Rule 15, keep: when a diff changes how a system is configured
+              or connected, the why belongs with it (a decision, a runbook
+              step or a dated change entry). A config change with no recorded
+              reason is a NIT, not IMPORTANT.
 
             Use the repository's CLAUDE.md for conventions. If the diff is
             clean, say so briefly — do not invent findings.
