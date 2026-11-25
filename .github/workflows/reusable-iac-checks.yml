@@ -17,7 +17,6 @@
 #         tier: b-internal
 #       secrets:
 #         PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
-#         INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 #
 # A merge-triggered call that also applies adds `apply_role_arn` and sets
 # `apply: true`; `apply_role_arn` is the <deploy-role-prefix>-<repo>-<env> role, never
@@ -36,7 +35,6 @@
 #         apply: true
 #       secrets:
 #         PSD_ENV_FILE_CONTENTS: ${{ secrets.PSD_ENV_FILE_CONTENTS }}
-#         INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 #
 # Apply stays an inline job in this file (no separate reusable-iac-apply.yml):
 # its own `apply_role_arn` input and the caller's job-level `environment:`
@@ -115,7 +113,7 @@ name: Reusable IaC checks
     secrets:
       INFRACOST_API_KEY:
         # yamllint disable-line rule:line-length
-        description: "Infracost API key. Required for tier a-production/b-internal callers (the infracost job skips entirely for tier c-experiment)."
+        description: "Accepted and ignored. The cost diff is priced from prices/aws/ with no key (standards/12-cloud-cost.md rule 12); kept so callers that still pass it don't fail."
         required: false
       PSD_ENV_FILE_CONTENTS:
         # yamllint disable-line rule:line-length
@@ -460,15 +458,14 @@ jobs:
       - name: terraform show (JSON, for checkov/conftest)
         # Values Terraform marks sensitive are nulled before the JSON leaves
         # this job: the artifact is readable by anyone with repo read access,
-        # and checkov, conftest and infracost never need the secret itself.
+        # and checkov, conftest and the cost diff never need the secret itself.
         # scripts/iac/redact_plan.py masks resource_changes, resource_drift,
         # planned_values, output_changes and configuration literals, drops
         # variables, and cuts prior_state to the IAM policy and attachment
         # attributes conftest's ses_send.rego reads for unchanged resources
         # (tested in scripts/iac/test_redact_plan.py).
-        # Infracost's FAQ (infracost.io/docs/faq, read 2026-10-14) states the
-        # CLI sends only cost-related parameters to its pricing API, never the
-        # plan JSON, so the redacted file is also what it reads.
+        # The cost-diff job reads the redacted file too; it never leaves
+        # GitHub (scripts/iac/cost_diff.py prices it from prices/aws/).
         run: |
           terraform show -json tfplan > tfplan.raw.json
           python3 "$GITHUB_WORKSPACE/_standards/scripts/iac/redact_plan.py" tfplan.raw.json tfplan.json
@@ -798,12 +795,13 @@ jobs:
             --plan-json "$RUNNER_TEMP/plan/tfplan.json" \
             --exceptions exceptions.yml
 
-  infracost:
-    name: infracost
-    # Gates on tier, not a separate opt-in flag: no shipped caller ever set
-    # the old infracost_enabled flag, so 12-cloud-cost.md rule 12's cost
-    # diff never posted for any tier. Tier a-production and b-internal get
-    # the diff; tier c-experiment skips it.
+  cost-diff:
+    name: cost-diff
+    # standards/12-cloud-cost.md rule 12: the PR shows the plan's monthly
+    # cost change. Priced from the AWS Price List tables in prices/aws/
+    # (scripts/iac/build_price_table.py, refreshed weekly by
+    # refresh-price-tables.yml), so no service, account or key is involved.
+    # Tier c-experiment skips it.
     if: inputs.tier != 'c-experiment'
     needs: plan
     runs-on: ubuntu-latest
@@ -812,39 +810,78 @@ jobs:
       contents: read
       pull-requests: write
     continue-on-error: true  # non-blocking (standards/12-cloud-cost.md rule 12)
-    defaults:
-      run:
-        working-directory: ${{ inputs.working_directory }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # tooling_ref is caller-controlled and picks the code this job runs
+      # with the job's token. It reaches the shell only through env, and
+      # anything but a SHA or a branch name stops the job here.
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout pricer and price tables (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
           persist-credentials: false
+          path: _policy
+          sparse-checkout: |
+            prices/
+            scripts/iac/cost_diff.py
+          sparse-checkout-cone-mode: false
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.plan.outputs.artifact_name }}
-          path: ${{ inputs.working_directory }}
+          path: ${{ runner.temp }}/plan
 
-      - uses: infracost/actions/setup@a5783eb98adc93aa7a0049fce0abb06fdd30770a # v5.0.1
-        with:
-          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      - name: Price the plan
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          AWS_REGION_INPUT: ${{ inputs.aws_region }}
+        run: |
+          region_args=()
+          if [ -n "$AWS_REGION_INPUT" ]; then region_args=(--region "$AWS_REGION_INPUT"); fi
+          python3 _policy/scripts/iac/cost_diff.py \
+            --plan "$RUNNER_TEMP/plan/tfplan.json" \
+            --prices-dir _policy/prices/aws \
+            --platform "$PLATFORM" "${region_args[@]}" \
+            --out "$RUNNER_TEMP/cost.md"
+          cat "$RUNNER_TEMP/cost.md" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Generate Infracost diff
-        # yamllint disable-line rule:line-length
-        run: infracost diff --path tfplan.json --format json --out-file infracost.json
-
-      # infracost/actions has no comment/ action at any pinned release: its
-      # README (v5.0.1) posts the comment with the CLI that setup installs.
-      # scripts/iac/check_action_pins.py fails CI on a pin to a missing path.
-      - name: Post Infracost comment
+      # One comment per PR and working directory, found by its marker and
+      # updated in place on each push.
+      - name: Post or update the PR comment
         if: github.event_name == 'pull_request'
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          WORKDIR: ${{ inputs.working_directory }}
         run: |
-          infracost comment github --path=infracost.json \
-            --repo="$GITHUB_REPOSITORY" --github-token="$GITHUB_TOKEN" \
-            --pull-request="$PR_NUMBER" --behavior=update
+          marker="<!-- psd-cost-diff:${WORKDIR} -->"
+          { echo "$marker"; cat "$RUNNER_TEMP/cost.md"; } > "$RUNNER_TEMP/comment.md"
+          id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F "body=@$RUNNER_TEMP/comment.md" > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F "body=@$RUNNER_TEMP/comment.md" > /dev/null
+          fi
 
   apply:
     name: apply

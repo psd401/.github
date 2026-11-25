@@ -6,7 +6,7 @@
 Usage: redact_plan.py <tfplan.raw.json> <tfplan.json>
 
 The uploaded artifact is readable by anyone with repo read access, and
-checkov, conftest and infracost never need the secret itself
+checkov, conftest and the cost diff never need the secret itself
 (standards/08-iac.md 'Private environment file'). Every section that can
 carry a value is masked with the sensitivity map Terraform emits next to it:
 

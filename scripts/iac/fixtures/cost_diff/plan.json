@@ -1,0 +1,33 @@
+{
+ "format_version": "1.2",
+ "configuration": {"provider_config": {"aws": {"name": "aws", "expressions": {"region": {"constant_value": "us-west-2"}}}}},
+ "resource_changes": [
+  {"address": "aws_instance.web", "mode": "managed", "type": "aws_instance",
+   "change": {"actions": ["create"], "before": null,
+     "after": {"instance_type": "t4g.small", "tenancy": "default", "root_block_device": [{"volume_size": 20, "volume_type": "gp3", "iops": 3000, "throughput": 125}], "ebs_block_device": []}}},
+  {"address": "aws_db_instance.app", "mode": "managed", "type": "aws_db_instance",
+   "change": {"actions": ["update"],
+     "before": {"engine": "postgres", "instance_class": "db.t4g.micro", "multi_az": false, "allocated_storage": 20, "storage_type": "gp3"},
+     "after": {"engine": "postgres", "instance_class": "db.t4g.micro", "multi_az": true, "allocated_storage": 20, "storage_type": "gp3"}}},
+  {"address": "aws_rds_cluster.db", "mode": "managed", "type": "aws_rds_cluster",
+   "change": {"actions": ["create"], "before": null,
+     "after": {"cluster_identifier": "sb-dev", "engine": "aurora-postgresql", "storage_type": null, "serverlessv2_scaling_configuration": [{"min_capacity": 0.5, "max_capacity": 4}]}}},
+  {"address": "aws_rds_cluster_instance.db[0]", "mode": "managed", "type": "aws_rds_cluster_instance",
+   "change": {"actions": ["create"], "before": null,
+     "after": {"cluster_identifier": "sb-dev", "engine": "aurora-postgresql", "instance_class": "db.serverless"}}},
+  {"address": "aws_nat_gateway.old", "mode": "managed", "type": "aws_nat_gateway",
+   "change": {"actions": ["delete"], "before": {"connectivity_type": "public"}, "after": null}},
+  {"address": "aws_cloudwatch_metric_alarm.errors", "mode": "managed", "type": "aws_cloudwatch_metric_alarm",
+   "change": {"actions": ["no-op"], "before": {"period": 300, "metric_query": []}, "after": {"period": 300, "metric_query": []}}},
+  {"address": "aws_secretsmanager_secret.db", "mode": "managed", "type": "aws_secretsmanager_secret",
+   "change": {"actions": ["create"], "before": null, "after": {"name": "sb-dev-db"}}},
+  {"address": "aws_lambda_function.api", "mode": "managed", "type": "aws_lambda_function",
+   "change": {"actions": ["create"], "before": null, "after": {"function_name": "sb-api"}}},
+  {"address": "aws_iam_role.api", "mode": "managed", "type": "aws_iam_role",
+   "change": {"actions": ["create"], "before": null, "after": {"name": "sb-api"}}},
+  {"address": "aws_opensearch_domain.search", "mode": "managed", "type": "aws_opensearch_domain",
+   "change": {"actions": ["create"], "before": null, "after": {"domain_name": "sb"}}},
+  {"address": "data.aws_caller_identity.me", "mode": "data", "type": "aws_caller_identity",
+   "change": {"actions": ["read"], "before": null, "after": {}}}
+ ]
+}
