@@ -2,6 +2,9 @@ name: CI
 on:
   # pull_request only: a check doesn't re-run after the merge (psd-dev-standards standards/06 §4, Runner minutes).
   pull_request:
+permissions:
+  contents: read
+
 jobs:
   # Gates that can't run in the reusable (another stack, a service container,
   # a browser, macOS) run as jobs here and roll up into psd-ci
@@ -17,4 +20,9 @@ jobs:
   #       gate: "off"         # or auto to also run the standard gate
   psd-ci:
     uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@96b807c4d40e61775ccfc412f9d7bac5e561147b # v1.16.0
-    secrets: inherit
+    # No secrets: the reusable reads none, and `secrets: inherit` would hand it
+    # every org and repo secret (psd-dev-standards standards/03, standards/06 §3).
+    with:
+      # The org CodeBuild runner where this repo is in its runner group, a
+      # GitHub-hosted runner otherwise (standards/04 rule 21).
+      runner: ${{ vars.PSD_LINUX_RUNNER || 'github' }}
