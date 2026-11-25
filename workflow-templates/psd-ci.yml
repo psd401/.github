@@ -3,6 +3,18 @@ on:
   # pull_request only: a check doesn't re-run after the merge (psd-dev-standards standards/06 §4, Runner minutes).
   pull_request:
 jobs:
+  # Gates that can't run in the reusable (another stack, a service container,
+  # a browser, macOS) run as jobs here and roll up into psd-ci
+  # (psd-dev-standards standards/06 §2, "Repo-specific gate jobs"):
+  #
+  #   backend: { ... }
+  #   psd-ci:
+  #     if: always()          # a skipped psd-ci counts as passing
+  #     needs: [backend]
+  #     uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@<sha> # vX.Y.Z
+  #     with:
+  #       upstream-results: ${{ join(needs.*.result, ' ') }}
+  #       gate: "off"         # or auto to also run the standard gate
   psd-ci:
     uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@53bd9c84e4630cbe0a8cf32c18eb1227b5f70ae5 # v1.14.1
     secrets: inherit
