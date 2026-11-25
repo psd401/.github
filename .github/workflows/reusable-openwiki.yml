@@ -294,7 +294,17 @@ jobs:
           test -f "$meta" || { echo "::error::$meta missing after the run"; exit 1; }
           jq . "$meta"
           status=$(jq -r .status "$meta")
-          [ "$status" = complete ] || { echo "::error::OpenWiki status is '$status', expected 'complete'"; exit 1; }
+          # openwiki 0.7.x writes "interrupted" both for a run that stopped
+          # midway (openwiki/.run.json left behind to resume from) and for a
+          # finished run that skipped pages whose worker gave up. A skipped
+          # page keeps its previous content, and the recorded gitHead stays at
+          # the old baseline so the next update reconsiders it. Publish the
+          # pages that did finish rather than failing the whole update.
+          if [ "$status" = interrupted ] && [ ! -e openwiki/.run.json ]; then
+            echo "::warning::OpenWiki skipped one or more pages (see 'page worker' lines in the Run OpenWiki log); they keep their previous content and are retried on the next update."
+          elif [ "$status" != complete ]; then
+            echo "::error::OpenWiki status is '$status', expected 'complete'"; exit 1
+          fi
           pages=$(find openwiki -name '*.md' ! -path openwiki/INSTRUCTIONS.md | wc -l | tr -d ' ')
           echo "OpenWiki: $pages pages (first build: $FIRST_BUILD), model $(jq -r .model "$meta"), gitHead $(jq -r .gitHead "$meta")" >> "$GITHUB_STEP_SUMMARY"
           # status says "complete" even when no page was written; an index
