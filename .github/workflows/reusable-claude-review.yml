@@ -125,7 +125,10 @@ jobs:
           use_bedrock: "true"
           allowed_bots: "dependabot"
           prompt: |
-            Review this pull request per PSD engineering standards:
+            Review pull request #${{ github.event.pull_request.number }} in
+            this repository per PSD engineering standards. Review only this
+            pull request: read, discuss and comment on no other pull request
+            or issue.
 
             Findings must be severity-tiered:
             - IMPORTANT (fix before merge): correctness bugs, security issues,
@@ -171,18 +174,32 @@ jobs:
             ${{ inputs.extra_prompt }}
             ${{ github.event.action == 'synchronize' && 'This is a re-review after new commits. Read your earlier review comment on this PR (gh pr view --comments). Post only IMPORTANT findings that are new or still unresolved, say which earlier IMPORTANT findings are now fixed, and skip nits.' || '' }}
 
-            Use `gh pr comment` with your Bash tool to leave the review as a
-            single PR comment.
+            Use `gh pr comment ${{ github.event.pull_request.number }}` with
+            your Bash tool to leave the review as a single PR comment. Read the
+            PR with `gh pr view ${{ github.event.pull_request.number }}` and
+            `gh pr diff ${{ github.event.pull_request.number }}`; those are the
+            only gh commands you can run.
 
             After posting it, return important_open: the number of IMPORTANT
             findings your comment reports as new or still unresolved (on a
             first review, every IMPORTANT finding; 0 when there are none).
             Earlier findings now fixed and nits don't count.
+          # Every allowed gh command is bound to this event's PR number. A
+          # canary review of one PR (psd-standards-canary#38, 2026-11-25) also
+          # posted a review on another (#39) through the old unbound
+          # `gh pr comment:*`; Kris ruled the reviewer is locked to its own PR
+          # (2026-11-25). `gh pr list`, `gh issue view/list` and `gh search`
+          # are gone: each can read another PR. Claude Code matches `X:*` as
+          # `X *` (a space after the number, so 38 doesn't match 380) and
+          # checks each part of a compound command on its own
+          # (code.claude.com/docs/en/permissions, read 2026-11-25). Unlisted
+          # commands are denied because allowed_bots keeps the action out of
+          # auto mode (src/modes/permission-mode.ts at the pinned SHA).
           # --json-schema makes the result a validated structured_output, which
           # the next step publishes, so the verdict is read as data, not prose.
           claude_args: >-
             --model ${{ inputs.model }} --max-turns ${{ inputs.max_turns }}
-            --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
+            --allowed-tools "Bash(gh pr comment ${{ github.event.pull_request.number }}:*),Bash(gh pr diff ${{ github.event.pull_request.number }}:*),Bash(gh pr view ${{ github.event.pull_request.number }}:*)"
             --json-schema '{"type":"object","properties":{"important_open":{"type":"integer","minimum":0}},"required":["important_open"],"additionalProperties":false}'
 
       # One annotation on this check run carries the verdict: the count of

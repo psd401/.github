@@ -117,12 +117,21 @@ def test_schema_is_strict_and_matches_the_design():
     }
 
 
+PR_NUMBER = "${{ github.event.pull_request.number }}"
+
+
+def allowed_tools():
+    args = shlex.split(review_step()["with"]["claude_args"])
+    assert args.count("--allowed-tools") == 1
+    assert not {"--allowedTools", "--allowed_tools", "--permission-mode",
+                "--dangerously-skip-permissions"} & set(args)
+    return args[args.index("--allowed-tools") + 1].split(",")
+
+
 def test_existing_claude_args_unchanged():
     args = shlex.split(review_step()["with"]["claude_args"])
     assert args[:6] == ["--model", "${{", "inputs.model", "}}", "--max-turns", "${{"]
-    tools = args[args.index("--allowed-tools") + 1]
-    assert tools == ("Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),"
-                     "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)")
+    assert allowed_tools() == [f"Bash(gh pr {verb} {PR_NUMBER}:*)" for verb in ("comment", "diff", "view")]
 
 
 def test_prompt_asks_for_the_count_the_way_the_review_defines_it():
@@ -311,3 +320,56 @@ def test_openwiki_skip_passes_with_review_skipped(tmp_path):
     code, out, _ = run_publish(tmp_path, skip="true", outcome="skipped")
     assert code == 0
     assert only_command(out) == "skipped-openwiki"
+
+
+# --- reviewer locked to its own PR -------------------------------------------
+# A canary review of psd-standards-canary#38 (2026-11-25) also posted a review
+# on #39. Every gh command the reviewer may run is bound to the event's PR.
+
+def test_every_allowed_tool_is_bound_to_the_event_pr():
+    for tool in allowed_tools():
+        m = re.fullmatch(r"Bash\(gh pr (comment|diff|view) (.+):\*\)", tool)
+        assert m, f"{tool} is not a gh pr command bound to a PR number"
+        assert m.group(2) == PR_NUMBER, tool
+
+
+@pytest.mark.parametrize("prefix", [
+    "gh pr list", "gh issue", "gh search", "gh api", "gh pr comment:", "gh pr view:",
+    "gh pr diff:", "gh pr review", "gh pr checkout", "gh browse", "gh repo",
+])
+def test_no_allowed_tool_reaches_another_pr(prefix):
+    for tool in allowed_tools():
+        assert not tool.startswith(f"Bash({prefix}"), tool
+
+
+@pytest.mark.parametrize("number", ["38", "39", "380"])
+def test_a_rendered_rule_matches_only_its_own_pr(number):
+    # Claude Code treats `X:*` as `X *`: the command is X, or X then a space.
+    def allowed(command, pr):
+        for tool in allowed_tools():
+            prefix = tool[len("Bash("):-len(":*)")].replace(PR_NUMBER, pr)
+            if command == prefix or command.startswith(prefix + " "):
+                return True
+        return False
+    assert allowed(f"gh pr comment {number} --body x", number)
+    assert allowed(f"gh pr view {number} --comments", number)
+    for other in {"38", "39", "380", "3"} - {number}:
+        assert not allowed(f"gh pr comment {other} --body x", number)
+        assert not allowed(f"gh pr view {other}", number)
+        assert not allowed(f"gh pr diff {other}", number)
+    assert not allowed("gh pr comment --body x", number)   # no number: the current branch
+
+
+def test_unlisted_commands_stay_denied():
+    # allowed_bots keeps the pinned action out of auto mode, where a classifier
+    # (not the allow list) would decide unlisted commands.
+    assert review_step()["with"].get("allowed_bots")
+    assert "settings" not in review_step()["with"]
+
+
+def test_prompt_names_only_this_pr():
+    prompt = review_step()["with"]["prompt"]
+    assert f"Review pull request #{PR_NUMBER}" in prompt
+    assert "Review only this" in prompt
+    assert f"gh pr comment {PR_NUMBER}" in prompt
+    assert "gh pr list" not in prompt and "gh issue" not in prompt
