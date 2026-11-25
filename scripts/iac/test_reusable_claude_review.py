@@ -6,7 +6,13 @@ structured output (important_open), and the step after it
 prints exactly one annotation, `::notice title=claude-review-important::<v>`,
 where <v> is the count, `skipped-openwiki`, or `error`. The step never fails
 the job on findings (psd-dev-standards standards/03 rule 6), and it prints
-only the validated number, never model text a PR can steer."""
+only the validated number, never model text a PR can steer.
+
+With --json-schema the pinned action fails the review step when a review
+that otherwise finished returns no structured output. The review step fails
+softly (continue-on-error), and the publish step passes only that case,
+proven by the action's own result message in its execution file; every other
+review failure still fails the job (Kris, 2026-11-25)."""
 import functools
 import json
 import pathlib
@@ -26,7 +32,14 @@ NOTICE = re.compile(r"^::notice title=claude-review-important::(\d+|skipped-open
 EXPR = {
     "skip": "${{ steps.scope.outputs.skip }}",
     "verdict": "${{ steps.review.outputs.structured_output }}",
+    "outcome": "${{ steps.review.outcome }}",
+    "execution_file": "${{ steps.review.outputs.execution_file }}",
+    "max_turns": "${{ inputs.max_turns }}",
 }
+
+# The result message the pinned action writes last to its execution file when
+# a run finished (base-action/src/run-claude-sdk.ts at 4d75e5f).
+FINISHED = {"type": "result", "subtype": "success", "is_error": False, "num_turns": 12}
 
 
 @functools.cache
@@ -56,13 +69,24 @@ def schema():
     return json.loads(args[args.index("--json-schema") + 1])
 
 
-def run_publish(tmp_path, skip="false", verdict=""):
+def run_publish(tmp_path, skip="false", verdict="", outcome="success",
+                messages=None, raw_execution=None, max_turns="60"):
+    """Run the publish step. messages is the execution file's JSON list;
+    raw_execution writes that text instead; with neither, there is no file."""
     s = step_named(PUBLISH)
     script = tmp_path / "step.sh"
     script.write_text(s["run"])
+    execution = tmp_path / "claude-execution-output.json"
+    if raw_execution is not None:
+        execution.write_text(raw_execution)
+    elif messages is not None:
+        execution.write_text(json.dumps(messages))
+    summary = tmp_path / "summary.md"
     by_expr = {v: k for k, v in EXPR.items()}
-    values = {"skip": skip, "verdict": verdict}
-    env = {"PATH": "/usr/bin:/bin"}
+    values = {"skip": skip, "verdict": verdict, "outcome": outcome,
+              "execution_file": str(execution) if execution.exists() else "",
+              "max_turns": max_turns}
+    env = {"PATH": "/usr/bin:/bin", "GITHUB_STEP_SUMMARY": str(summary)}
     for var, expr in (s.get("env") or {}).items():
         assert expr in by_expr, f"env {var} uses {expr}, which these tests don't model"
         env[var] = values[by_expr[expr]]
@@ -116,9 +140,17 @@ def test_publish_step_follows_the_review_and_runs_unless_cancelled():
     assert names.index(PUBLISH) == names.index("Run Claude Code Review") + 1
     s = step_named(PUBLISH)
     assert s["if"] == "${{ !cancelled() }}"
-    # A failed review step must still fail the job.
+    # The publish step is the one that fails the job for a failed review, so
+    # it must never fail softly itself.
     assert "continue-on-error" not in s
-    assert "continue-on-error" not in review_step()
+
+
+def test_review_step_fails_softly_and_only_that_step():
+    # A missing count fails the review step at the pinned action; the publish
+    # step decides whether that failure fails the job.
+    assert review_step()["continue-on-error"] is True
+    soft = [s.get("name") for s in steps() if "continue-on-error" in s]
+    assert soft == ["Run Claude Code Review"]
 
 
 def test_publish_step_reads_outputs_only_through_env():
@@ -195,3 +227,87 @@ def test_model_text_never_reaches_the_log(tmp_path, title):
     assert only_command(out) == "error"
     assert "important_titles" not in out + err
     assert title.strip().splitlines()[-1] not in out + err
+
+
+# --- review step failed (continue-on-error) --------------------------------
+
+def test_missing_count_from_a_finished_review_passes(tmp_path):
+    # The action fails the step with "--json-schema was provided but Claude did
+    # not return structured_output" after a run that finished: the check passes.
+    messages = [{"type": "system", "subtype": "init"}, {"type": "assistant"}, FINISHED]
+    code, out, _ = run_publish(tmp_path, outcome="failure", verdict="", messages=messages)
+    assert code == 0
+    assert only_command(out) == "error"
+    assert "no IMPORTANT count" in (tmp_path / "summary.md").read_text()
+
+
+def test_missing_count_at_exactly_max_turns_passes(tmp_path):
+    code, out, _ = run_publish(tmp_path, outcome="failure",
+                               messages=[dict(FINISHED, num_turns=60)], max_turns="60")
+    assert code == 0
+    assert only_command(out) == "error"
+
+
+@pytest.mark.parametrize("result", [
+    {"type": "result", "subtype": "error_max_turns", "is_error": True, "num_turns": 61},
+    {"type": "result", "subtype": "error_during_execution", "is_error": True, "num_turns": 3},
+    dict(FINISHED, is_error=True),                 # success with is_error: a failed run
+    dict(FINISHED, num_turns=61),                  # the action's turn-cap check
+    {k: v for k, v in FINISHED.items() if k != "num_turns"},
+    {k: v for k, v in FINISHED.items() if k != "is_error"},
+    dict(FINISHED, is_error="false"),
+    dict(FINISHED, num_turns="12"),
+])
+def test_review_that_did_not_finish_still_fails(tmp_path, result):
+    code, out, err = run_publish(tmp_path, outcome="failure", messages=[{"type": "assistant"}, result])
+    assert code == 1
+    assert only_command(out) == "error"
+    assert "Run Claude Code Review failed" in err
+
+
+def test_only_the_last_result_message_counts(tmp_path):
+    bad = {"type": "result", "subtype": "error_during_execution", "is_error": True, "num_turns": 3}
+    code, _, _ = run_publish(tmp_path, outcome="failure", messages=[FINISHED, {"type": "assistant"}, bad])
+    assert code == 1
+
+
+@pytest.mark.parametrize("messages,raw", [
+    (None, None),                                  # failed before Claude ran: no file
+    ([], None),
+    ([{"type": "assistant"}], None),               # no result message
+    (None, "not json"),
+    (None, '{"type":"result","subtype":"success","is_error":false,"num_turns":1}'),
+    ([None, "result", 3], None),
+])
+def test_failure_without_a_finished_result_fails(tmp_path, messages, raw):
+    code, out, _ = run_publish(tmp_path, outcome="failure", messages=messages, raw_execution=raw)
+    assert code == 1
+    assert only_command(out) == "error"
+
+
+def test_failure_with_a_valid_count_still_fails(tmp_path):
+    # The count was set, so the action failed for another reason.
+    code, out, _ = run_publish(tmp_path, outcome="failure", verdict='{"important_open":2}',
+                               messages=[FINISHED])
+    assert code == 1
+    assert only_command(out) == "2"
+
+
+@pytest.mark.parametrize("max_turns", ["", "abc", "60; rm -rf /"])
+def test_unreadable_max_turns_fails_closed(tmp_path, max_turns):
+    code, _, _ = run_publish(tmp_path, outcome="failure", messages=[FINISHED], max_turns=max_turns)
+    assert code == 1
+
+
+@pytest.mark.parametrize("outcome", ["success", "skipped", ""])
+def test_review_that_did_not_fail_never_fails_the_job(tmp_path, outcome):
+    # Outcome success with no count: the action's workflow-validation self-skip.
+    code, out, _ = run_publish(tmp_path, outcome=outcome, verdict="")
+    assert code == 0
+    assert only_command(out) == "error"
+
+
+def test_openwiki_skip_passes_with_review_skipped(tmp_path):
+    code, out, _ = run_publish(tmp_path, skip="true", outcome="skipped")
+    assert code == 0
+    assert only_command(out) == "skipped-openwiki"
