@@ -9,13 +9,11 @@
     "district_id",
     "network",
     "timezone",
-    "patch_window",
     "monitoring",
     "virtualization",
     "cloud",
     "oidc",
-    "operations",
-    "contacts"
+    "operations"
   ],
   "properties": {
     "district_id": {
@@ -85,7 +83,7 @@
     },
     "patch_window": {
       "type": "string",
-      "description": "Free-text patch/maintenance window. Placeholder until the ops process defines it.",
+      "description": "Free-text patch/maintenance window. Optional until the operations process sets one (15-onprem-platform.md rule 38): never a placeholder value. resolve_env_file.py fails naming this key when a Terraform or Packer root declares variable \"patch_window\" and the file has none.",
       "examples": ["<patch-window>"]
     },
     "monitoring": {
@@ -155,7 +153,7 @@
         "aws": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["state_bucket_prefix", "account_alias", "region_default", "region_ai", "alerts_topic_name", "bedrock_default_model_id"],
+          "required": ["state_bucket_prefix", "account_alias", "region_default", "region_ai"],
           "properties": {
             "state_bucket_prefix": {
               "type": "string",
@@ -165,8 +163,8 @@
             "account_alias": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["prod", "nonprod", "sandbox"],
-              "description": "Account alias per environment tier, used in resource-naming patterns.",
+              "required": ["prod", "nonprod"],
+              "description": "Account alias per environment tier, used in resource-naming patterns. sandbox is optional until the sandbox account has an IAM account alias; resolve_env_file.py fails naming cloud.aws.account_alias.sandbox when a caller passes account_alias: sandbox and the file has none.",
               "properties": {
                 "prod": { "type": "string", "examples": ["<prod-account-alias>"] },
                 "nonprod": { "type": "string", "examples": ["<nonprod-account-alias>"] },
@@ -185,12 +183,12 @@
             },
             "alerts_topic_name": {
               "type": "string",
-              "description": "Name of the SNS topic every CloudWatch alarm action targets, present in each workload account (08-iac.md, district defaults). Apps look it up by name and never create their own.",
+              "description": "Name of the SNS topic every CloudWatch alarm action targets, present in each workload account (08-iac.md, district defaults). Apps look it up by name and never create their own. Optional until the shared topic exists: never a placeholder value. resolve_env_file.py fails naming this key when the Terraform root declares variable \"alerts_topic_name\" and the file has none.",
               "examples": ["<alerts-topic-name>"]
             },
             "bedrock_default_model_id": {
               "type": "string",
-              "description": "Bedrock model ID an app uses when the task names none (08-iac.md, district defaults). Apps take it as a variable with no default.",
+              "description": "Bedrock model ID an app uses when the task names none (08-iac.md, district defaults). Apps take it as a variable with no default. Optional until the district picks one: never a placeholder value. resolve_env_file.py fails naming this key when the Terraform root declares variable \"bedrock_default_model_id\" and the file has none.",
               "examples": ["<bedrock-default-model-id>"]
             },
             "student_pii": {
@@ -298,7 +296,7 @@
         "gcp": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["state_backend", "project_id"],
+          "required": ["state_backend"],
           "properties": {
             "state_backend": {
               "type": "string",
@@ -309,7 +307,7 @@
             "project_id": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["prod", "nonprod"],
+              "description": "District-wide GCP project per tier. Optional, and each key in it optional, until such a project exists: never a placeholder value. resolve_env_file.py fails naming cloud.gcp.project_id.<tier> for a gcp caller when the file has none.",
               "properties": {
                 "prod": { "type": "string", "examples": ["<gcp-project-id-prod>"] },
                 "nonprod": { "type": "string", "examples": ["<gcp-project-id-nonprod>"] }
@@ -334,11 +332,10 @@
     "operations": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["change_request_system"],
       "properties": {
         "change_request_system": {
           "type": "string",
-          "description": "Placeholder until the ops process defines how change requests are tracked.",
+          "description": "How change requests are tracked. Optional until the operations process defines it (15-onprem-platform.md rule 23): never a placeholder value. No resolver reads it today.",
           "examples": ["<change-request-system>"]
         },
         "pbs_backup_schedule": {
@@ -351,11 +348,11 @@
     "contacts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["iac_owner_role"],
+      "description": "Optional until a role title is defined: never a placeholder value. No resolver reads it today.",
       "properties": {
         "iac_owner_role": {
           "type": "string",
-          "description": "Role title only, never a person's name. Schema validation checks type, not whether the value is actually a role (08-iac.md 'Private environment file', a named gap).",
+          "description": "Role title only, never a person's name. Optional until one is defined. Schema validation checks type, not whether the value is actually a role (08-iac.md 'Private environment file', a named gap).",
           "examples": ["<iac-owner-role-title>"]
         }
       }
@@ -365,7 +362,7 @@
     "vlan": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "subnet", "allowed_data_classifications"],
+      "required": ["id", "subnet"],
       "properties": {
         "id": {
           "description": "Numeric VLAN ID (1-4094). example.env.yml uses the <token> placeholder instead of a real integer (08-iac.md 'Private environment file'), so this accepts either.",
@@ -388,7 +385,7 @@
             "type": "string",
             "enum": ["public", "internal", "student-pii"]
           },
-          "description": "Data classifications permitted to run on this VLAN, using the same enum as the psd:data-classification tag (08-iac.md District defaults). Maps the VLAN's infrastructure role to the data sensitivity it's approved to carry (15-onprem-platform.md §4 rule 16). Until cluster.fw is enabled (§5 rules 19-21), this is a declared policy, not an enforced control.",
+          "description": "Data classifications permitted to run on this VLAN, using the same enum as the psd:data-classification tag (08-iac.md District defaults). Maps the VLAN's infrastructure role to the data sensitivity it's approved to carry (15-onprem-platform.md §4 rule 16). Until cluster.fw is enabled (§5 rules 19-21), this is a declared policy, not an enforced control. Optional until the policy decision lands: never a placeholder value. No resolver or conftest rule reads it today.",
           "examples": [["internal"]]
         }
       }

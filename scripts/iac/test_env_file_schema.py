@@ -29,10 +29,101 @@ def errors(data):
 @pytest.mark.parametrize("env_file", [
     HERE / "fixtures" / "env-student-pii.yml",
     HERE / "fixtures" / "district.example.yml",
+    HERE / "fixtures" / "district.unfilled.yml",
     ROOT / "schemas" / "iac" / "example.env.yml",
 ])
 def test_valid_files_pass(env_file):
     assert errors(yaml.safe_load(env_file.read_text())) == set()
+
+
+UNFILLED = yaml.safe_load((HERE / "fixtures" / "district.unfilled.yml").read_text())
+
+# Keys with no real value anywhere yet: optional in the schema, never a placeholder
+# (PSD401/.github env-schema-optional-unfilled). Each path is absent from
+# district.unfilled.yml, and each is type-checked when present.
+OPTIONAL_UNTIL_FILLED = {
+    ("network", "vlans", "management", "allowed_data_classifications"): ["internal"],
+    ("network", "vlans", "workload", "allowed_data_classifications"): ["internal"],
+    ("network", "vlans", "storage", "allowed_data_classifications"): ["internal"],
+    ("patch_window",): "Sun 02:00-04:00",
+    ("cloud", "aws", "account_alias", "sandbox"): "sandbox-alias",
+    ("cloud", "aws", "alerts_topic_name"): "example-alerts",
+    ("cloud", "aws", "bedrock_default_model_id"): "anthropic.claude-x",
+    ("cloud", "gcp", "project_id"): {"prod": "gcp-prod", "nonprod": "gcp-nonprod"},
+    ("operations", "change_request_system"): "example-itsm",
+    ("contacts",): {"iac_owner_role": "infrastructure engineer"},
+}
+
+
+def get(env, path):
+    for p in path:
+        env = env.get(p) if isinstance(env, dict) else None
+    return env
+
+
+def put(env, path, value):
+    for p in path[:-1]:
+        env = env.setdefault(p, {})
+    env[path[-1]] = value
+
+
+@pytest.mark.parametrize("path", sorted(OPTIONAL_UNTIL_FILLED))
+def test_unfilled_fixture_leaves_out_each_optional_key(path):
+    assert get(UNFILLED, path) is None
+
+
+@pytest.mark.parametrize("path, value", sorted(OPTIONAL_UNTIL_FILLED.items()))
+def test_optional_key_with_a_real_shaped_value_passes(path, value):
+    env = copy.deepcopy(UNFILLED)
+    put(env, path, value)
+    assert errors(env) == set()
+
+
+VLAN_CLASSES = ("network", "vlans", "workload", "allowed_data_classifications")
+
+
+@pytest.mark.parametrize("path, bad, where, keyword", [
+    (VLAN_CLASSES, "internal", VLAN_CLASSES, "type"),
+    (VLAN_CLASSES, ["secret"], VLAN_CLASSES + (0,), "enum"),
+    (VLAN_CLASSES, [], VLAN_CLASSES, "minItems"),
+    (("patch_window",), 4, None, "type"),
+    (("cloud", "aws", "account_alias", "sandbox"), ["sandbox-alias"], None, "type"),
+    (("cloud", "aws", "alerts_topic_name"), {"name": "x"}, None, "type"),
+    (("cloud", "aws", "bedrock_default_model_id"), 7, None, "type"),
+    (("cloud", "gcp", "project_id"), "gcp-prod", None, "type"),
+    (("cloud", "gcp", "project_id", "prod"), 12, None, "type"),
+    (("operations", "change_request_system"), True, None, "type"),
+    (("contacts", "iac_owner_role"), ["engineer"], None, "type"),
+])
+def test_optional_key_present_but_wrongly_typed_still_fails(path, bad, where, keyword):
+    env = copy.deepcopy(UNFILLED)
+    put(env, path, bad)
+    assert (where or path, keyword) in errors(env)
+
+
+@pytest.mark.parametrize("path, extra", [
+    (("contacts",), "owner_name"),
+    (("cloud", "gcp", "project_id"), "sandbox"),
+    (("network", "vlans", "storage"), "classifications"),
+])
+def test_optional_blocks_still_reject_unknown_keys(path, extra):
+    env = copy.deepcopy(UNFILLED)
+    put(env, path, dict(get(env, path) or {}, **{extra: "x"}))
+    assert (path, "additionalProperties") in errors(env)
+
+
+@pytest.mark.parametrize("path", [
+    ("district_id",), ("network",), ("timezone",), ("monitoring",), ("virtualization",),
+    ("cloud",), ("oidc",), ("operations",),
+    ("network", "vlans", "workload", "id"), ("network", "vlans", "workload", "subnet"),
+    ("cloud", "aws", "state_bucket_prefix"), ("cloud", "aws", "account_alias", "prod"),
+    ("cloud", "aws", "account_alias", "nonprod"), ("cloud", "aws", "region_default"),
+    ("cloud", "aws", "region_ai"), ("cloud", "gcp", "state_backend"),
+])
+def test_keys_with_real_values_stay_required(path):
+    env = copy.deepcopy(UNFILLED)
+    del (get(env, path[:-1]) if len(path) > 1 else env)[path[-1]]
+    assert (path[:-1], "required") in errors(env)
 
 
 def student_pii_without_regions(env):

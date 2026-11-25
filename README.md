@@ -14,6 +14,8 @@ Org-wide defaults and the **reusable workflow library** for Peninsula School Dis
 
 Validates a district's private `<district-id>.env.yml` against [`schemas/iac/environment-file.schema.json`](schemas/iac/environment-file.schema.json) before any Terraform or Packer job reads it. The job prints schema error paths only, never a value from the file. [`schemas/iac/example.env.yml`](schemas/iac/example.env.yml) is a placeholder instance.
 
+A key with no real value yet (a VLAN's `allowed_data_classifications`, `patch_window`, `cloud.aws.account_alias.sandbox`, `cloud.aws.alerts_topic_name`, `cloud.aws.bedrock_default_model_id`, `cloud.gcp.project_id`, `operations.change_request_system`, `contacts`) is optional in the schema and left out of the file, never filled with a placeholder. When present it is still type-checked. A caller that needs one fails in `reusable-iac-checks.yml`'s resolve step, which names the missing key: `scripts/iac/resolve_env_file.py` reads `account_alias.sandbox` and `project_id.<tier>` only for that tier, and fails on an absent `alerts_topic_name`, `bedrock_default_model_id` or `patch_window` only when the Terraform root declares that variable.
+
 ```yaml
 jobs:
   env-file-check:

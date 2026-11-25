@@ -1,0 +1,46 @@
+# ABOUTME: Test fixture: a district file with every not-yet-filled optional key left out,
+# ABOUTME: the shape of a real file mid-rollout. Fake values only; no real district value.
+# Left out on purpose (optional until a real value exists, never a placeholder):
+#   network.vlans.*.allowed_data_classifications, patch_window,
+#   cloud.aws.account_alias.sandbox, cloud.aws.alerts_topic_name,
+#   cloud.aws.bedrock_default_model_id, cloud.gcp.project_id,
+#   operations.change_request_system, contacts.
+district_id: testdistrict
+network:
+  vlans:
+    management: {id: 10, subnet: 192.0.2.0/24}
+    workload: {id: 20, subnet: 198.51.100.0/24}
+    storage: {id: 30, subnet: 203.0.113.0/24}
+  dns_zones:
+    internal: example.internal
+  ca:
+    internal_root: Example Internal Root CA
+  syslog_target: syslog.example.internal:514
+  ntp_servers: [ntp1.example.internal]
+timezone: America/Los_Angeles
+monitoring:
+  zabbix_server: zabbix.example.internal
+virtualization:
+  proxmox_api_endpoint: https://pve.example.internal:8006
+  cluster_name: pve-test
+  resource_pools:
+    vm-repo: pool-vm-repo
+  vmid_ranges:
+    templates: 9000-9099
+  vmid_reuse_notes: none reused
+  bridge_availability:
+    node-a: [vmbr0, vmbr1]
+cloud:
+  aws:
+    state_bucket_prefix: example-tfstate
+    account_alias:
+      prod: prod-alias
+      nonprod: nonprod-alias
+    region_default: us-west-2
+    region_ai: us-east-1
+  gcp:
+    state_backend: gcs
+oidc:
+  deploy_role_prefix: example-deploy
+operations:
+  pbs_backup_schedule: daily

@@ -53,7 +53,7 @@ The SCP and the deploy-role boundaries expect these names. Keep them.
 | Variable | Source |
 | --- | --- |
 | `account_alias` | `TF_VAR_account_alias`, set by `scripts/iac/resolve_env_file.py` |
-| `alerts_topic_name` | `TF_VAR_alerts_topic_name`, set by `scripts/iac/resolve_env_file.py` |
+| `alerts_topic_name` | `TF_VAR_alerts_topic_name`, set by `scripts/iac/resolve_env_file.py` from `cloud.aws.alerts_topic_name`. That key is optional in the schema until the topic exists; this root declares the variable, so the resolve step fails naming the key until the env file has it |
 | `student_pii` | `TF_VAR_student_pii`, set by `scripts/iac/resolve_env_file.py` from `cloud.aws.student_pii` without its test strings or `guardrail_mode` |
 | `deploy_role_prefix` | `TF_VAR_deploy_role_prefix`, set by `scripts/iac/resolve_env_file.py` from `oidc.deploy_role_prefix` |
 | `owner` | `psd.auto.tfvars` |

@@ -6,16 +6,17 @@
 Usage:
   resolve_env_file.py --env-file <decoded.env.yml> --github-env "$GITHUB_ENV"
       --platform aws|gcp --environment <env> --account-alias prod|nonprod|sandbox
-      --repo <repo> --region <region> --backend-out <path>/backend.hcl
+      --repo <repo> --region <region> --backend-out <path>/backend.hcl [--tf-dir <root>]
   resolve_env_file.py --env-file <decoded.env.yml> --github-env "$GITHUB_ENV"
-      --platform proxmox --repo <repo>
+      --platform proxmox --repo <repo> [--tf-dir <root>]
   resolve_env_file.py --env-file <decoded.env.yml> --student-pii-out <path>/student-pii-account.json
       --ses-out <path>/ses-from-addresses.json --repo <repo>
 
 aws:     writes backend.hcl (bucket = <state_bucket_prefix>-<account alias>-<region>,
          key = <repo>/<environment>/terraform.tfstate) and exports TF_VAR_repo,
-         TF_VAR_account_alias, TF_VAR_alerts_topic_name,
-         TF_VAR_bedrock_default_model_id, TF_VAR_deploy_role_prefix and, when
+         TF_VAR_account_alias, TF_VAR_alerts_topic_name and
+         TF_VAR_bedrock_default_model_id (see Optional keys),
+         TF_VAR_deploy_role_prefix and, when
          cloud.aws.student_pii is set, TF_VAR_student_pii without its test
          strings (templates/account-baseline; standards/08-iac.md 'Platform: AWS',
          'District defaults').
@@ -35,6 +36,15 @@ proxmox: exports TF_VAR_/PKR_VAR_ pairs the proxmox-vm template's root module
          Always written; present is false and the list empty when the env file
          has no cloud.aws.ses. May run alone or alongside the other modes.
 
+Optional keys: cloud.aws.alerts_topic_name, cloud.aws.bedrock_default_model_id
+and patch_window are optional in the schema until a real value exists, and
+never get a placeholder. Each is exported when present. When absent, the run
+fails naming the key if the Terraform root in --tf-dir (default: the current
+directory, the caller's working_directory in reusable-iac-checks.yml)
+declares the variable that carries it, and skips the export otherwise.
+cloud.aws.account_alias.sandbox and cloud.gcp.project_id.<tier> are read only
+when the caller asks for that tier, so their absence fails naming the key.
+
 Never prints a resolved value: errors name the missing key only. Every value
 written to --github-env still shows in the env: block of each later step's
 log in the caller repo, including TF_VAR_student_pii with the custom
@@ -42,7 +52,9 @@ identifier regexes.
 """
 import argparse
 import json
+import re
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -50,7 +62,35 @@ ALIAS_TO_GCP = {"prod": "prod", "nonprod": "nonprod", "sandbox": "nonprod"}
 
 
 class MissingKey(Exception):
-    pass
+    def __init__(self, key, variable=None):
+        super().__init__(key)
+        self.key = key
+        self.variable = variable
+
+
+# A Terraform variable block's opening line. Comment lines don't match (^\s*
+# then "variable"), but a block inside /* */ would: that errs toward failing.
+VARIABLE_BLOCK = re.compile(r'^\s*variable\s+"([A-Za-z_][A-Za-z0-9_-]*)"', re.M)
+
+
+def declared_variables(tf_dir):
+    """Names of the variables the Terraform root in tf_dir declares (*.tf)."""
+    names = set()
+    for f in sorted(Path(tf_dir).glob("*.tf")):
+        names.update(VARIABLE_BLOCK.findall(f.read_text(encoding="utf-8", errors="replace")))
+    return names
+
+
+def optional(env, declared, variable, *path):
+    """[(TF_VAR_<variable>, value)] for a key the schema leaves optional until a
+    real value exists. Absent: [] unless the root declares the variable, then
+    MissingKey naming the key."""
+    try:
+        return [(f"TF_VAR_{variable}", dig(env, *path))]
+    except MissingKey:
+        if variable in declared:
+            raise MissingKey(".".join(path), variable) from None
+        return []
 
 
 def dig(data, *path):
@@ -77,11 +117,12 @@ def aws(env, a):
         f.write(f'bucket = "{prefix}-{alias}-{a.region}"\n')
         f.write(f'key    = "{a.repo}/{a.environment}/terraform.tfstate"\n')
         f.write(f'region = "{a.region}"\n')
+    declared = declared_variables(a.tf_dir)
     pairs = [
         ("TF_VAR_repo", a.repo),
         ("TF_VAR_account_alias", a.account_alias),
-        ("TF_VAR_alerts_topic_name", dig(env, "cloud", "aws", "alerts_topic_name")),
-        ("TF_VAR_bedrock_default_model_id", dig(env, "cloud", "aws", "bedrock_default_model_id")),
+        *optional(env, declared, "alerts_topic_name", "cloud", "aws", "alerts_topic_name"),
+        *optional(env, declared, "bedrock_default_model_id", "cloud", "aws", "bedrock_default_model_id"),
         ("TF_VAR_deploy_role_prefix", dig(env, "oidc", "deploy_role_prefix")),
     ]
     student_pii = baseline_student_pii(env)
@@ -128,7 +169,7 @@ def proxmox(env, a):
         ("TF_VAR_syslog_target", dig(env, "network", "syslog_target")),
         ("TF_VAR_monitoring_server", dig(env, "monitoring", "zabbix_server")),
         ("TF_VAR_ntp_servers", dig(env, "network", "ntp_servers")),
-        ("TF_VAR_patch_window", dig(env, "patch_window")),
+        *optional(env, declared_variables(a.tf_dir), "patch_window", "patch_window"),
     ]
 
 
@@ -202,6 +243,8 @@ def main():
     ap.add_argument("--backend-out", default="backend.hcl")
     ap.add_argument("--student-pii-out")
     ap.add_argument("--ses-out")
+    ap.add_argument("--tf-dir", default=".",
+                    help="Terraform root whose variable blocks decide whether an absent optional key fails.")
     a = ap.parse_args()
     if (a.github_env is None) != (a.platform is None):
         ap.error("--github-env and --platform go together.")
@@ -228,8 +271,10 @@ def main():
     try:
         pairs = {"aws": aws, "gcp": gcp, "proxmox": proxmox}[a.platform](env, a)
     except MissingKey as exc:
-        print(f"environment file has no {exc} (needed for platform {a.platform}, repo {a.repo}).",
-              file=sys.stderr)
+        why = f"platform {a.platform}, repo {a.repo}"
+        if exc.variable:
+            why += f', whose Terraform root declares variable "{exc.variable}"'
+        print(f"environment file has no {exc.key} (needed for {why}).", file=sys.stderr)
         return 1
     export(a.github_env, pairs)
     print(f"resolved {len(pairs)} value(s) for platform {a.platform} into GITHUB_ENV"
