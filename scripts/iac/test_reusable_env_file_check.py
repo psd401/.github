@@ -10,7 +10,11 @@ repository containing the workflow file that defines the current job" and
 read 2026-11-06)."""
 import pathlib
 import re
+import subprocess
+import sys
+import textwrap
 
+import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -60,3 +64,42 @@ def test_every_pip_install_requires_hashes():
     for line in installs:
         assert "--require-hashes" in line, line
         assert re.search(r"-r\s+\S*tools/iac/requirements\.txt", line), line
+
+
+def validator_script():
+    """The Python the workflow writes to /tmp/validate_env_file.py, unchanged."""
+    run = next(s["run"] for s in STEPS if "validate_env_file.py <<'PY'" in s.get("run", ""))
+    body = run.split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    return textwrap.dedent(body)
+
+
+SCHEMA = ROOT / "schemas/iac/environment-file.schema.json"
+UNFILLED = ROOT / "scripts/iac/fixtures/district.unfilled.yml"
+
+
+def validate(tmp_path, env_text):
+    script = tmp_path / "validate_env_file.py"
+    script.write_text(validator_script())
+    env = tmp_path / "env.yml"
+    env.write_text(env_text)
+    return subprocess.run([sys.executable, str(script), str(env), str(SCHEMA)],
+                          capture_output=True, text=True)
+
+
+def test_workflow_validator_passes_a_file_with_the_unfilled_keys_left_out(tmp_path):
+    """The shape of a real district file mid-rollout: every key with no real
+    value yet is absent, not a placeholder."""
+    r = validate(tmp_path, UNFILLED.read_text())
+    assert r.returncode == 0, r.stderr
+    assert "valid against the schema" in r.stdout
+
+
+@pytest.mark.parametrize("key, bad, where", [
+    ("patch_window", "patch_window: 4\n", "patch_window: type"),
+    ("contacts", "contacts: {iac_owner_role: [x-not-printed]}\n", "contacts/iac_owner_role: type"),
+])
+def test_workflow_validator_fails_a_wrongly_typed_optional_key_by_path_only(tmp_path, key, bad, where):
+    r = validate(tmp_path, UNFILLED.read_text() + bad)
+    assert r.returncode == 1
+    assert f"schema violation at {where} failed" in r.stderr
+    assert "x-not-printed" not in r.stdout + r.stderr

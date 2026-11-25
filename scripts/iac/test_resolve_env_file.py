@@ -306,3 +306,100 @@ def test_malformed_yaml_writes_no_ses_file(tmp_path):
                        capture_output=True, text=True)
     assert r.returncode == 1
     assert not (tmp_path / "s.json").exists()
+
+
+# Keys the schema leaves optional until a real value exists (never a placeholder).
+# A caller whose Terraform root needs one fails at resolve time naming the key;
+# a caller that doesn't need it resolves.
+UNFILLED = HERE / "fixtures" / "district.unfilled.yml"
+
+
+def resolve(tmp_path, env_file, *args, variables=()):
+    """Run the resolver against env_file with a Terraform root declaring variables."""
+    root = tmp_path / "root"
+    root.mkdir(exist_ok=True)
+    (root / "variables.tf").write_text(
+        "# variable \"commented_out\" {}\n"
+        + "".join(f'variable "{v}" {{\n  type = string\n}}\n' for v in variables))
+    github_env = tmp_path / "github_env"
+    github_env.write_text("")
+    r = subprocess.run([sys.executable, str(SCRIPT), "--env-file", str(env_file),
+                        "--github-env", str(github_env), "--tf-dir", str(root), *args],
+                       capture_output=True, text=True)
+    return r, github_env.read_text()
+
+
+AWS_ARGS = ("--platform", "aws", "--environment", "dev", "--repo", "my-app",
+            "--region", "us-west-2")
+
+
+def test_unfilled_file_resolves_aws_for_a_root_that_needs_no_optional_key(tmp_path):
+    r, env = resolve(tmp_path, UNFILLED, *AWS_ARGS, "--account-alias", "nonprod",
+                     "--backend-out", str(tmp_path / "b.hcl"), variables=["repo", "account_alias"])
+    assert r.returncode == 0, r.stderr
+    assert "TF_VAR_repo=my-app\n" in env
+    assert "TF_VAR_alerts_topic_name" not in env
+    assert "TF_VAR_bedrock_default_model_id" not in env
+    assert (tmp_path / "b.hcl").read_text().startswith('bucket = "example-tfstate-nonprod-alias-us-west-2"')
+
+
+@pytest.mark.parametrize("variable, key", [
+    ("alerts_topic_name", "cloud.aws.alerts_topic_name"),
+    ("bedrock_default_model_id", "cloud.aws.bedrock_default_model_id"),
+])
+def test_aws_root_that_declares_an_absent_optional_key_fails_naming_it(tmp_path, variable, key):
+    r, env = resolve(tmp_path, UNFILLED, *AWS_ARGS, "--account-alias", "nonprod",
+                     "--backend-out", str(tmp_path / "b.hcl"), variables=["repo", variable])
+    assert r.returncode == 1
+    assert f"environment file has no {key} " in r.stderr
+    assert f'declares variable "{variable}"' in r.stderr
+    assert env == ""
+    assert "nonprod-alias" not in r.stdout + r.stderr
+
+
+def test_commented_out_variable_does_not_count_as_declared(tmp_path):
+    r, _ = resolve(tmp_path, UNFILLED, *AWS_ARGS, "--account-alias", "nonprod",
+                   "--backend-out", str(tmp_path / "b.hcl"))
+    assert r.returncode == 0, r.stderr
+
+
+def test_optional_key_present_is_exported_whether_or_not_declared(tmp_path):
+    r, env = resolve(tmp_path, ENV, *AWS_ARGS, "--account-alias", "nonprod",
+                     "--backend-out", str(tmp_path / "b.hcl"))
+    assert r.returncode == 0, r.stderr
+    assert "TF_VAR_alerts_topic_name=example-alerts\n" in env
+    assert "TF_VAR_bedrock_default_model_id=anthropic.claude-x\n" in env
+
+
+def test_sandbox_caller_without_a_sandbox_alias_fails_naming_it(tmp_path):
+    r, env = resolve(tmp_path, UNFILLED, *AWS_ARGS, "--account-alias", "sandbox",
+                     "--backend-out", str(tmp_path / "b.hcl"))
+    assert r.returncode == 1
+    assert "environment file has no cloud.aws.account_alias.sandbox " in r.stderr
+    assert env == ""
+    assert not (tmp_path / "b.hcl").exists()
+
+
+@pytest.mark.parametrize("alias, tier", [("prod", "prod"), ("nonprod", "nonprod"), ("sandbox", "nonprod")])
+def test_gcp_caller_without_a_project_id_fails_naming_it(tmp_path, alias, tier):
+    r, env = resolve(tmp_path, UNFILLED, "--platform", "gcp", "--environment", "dev",
+                     "--account-alias", alias, "--repo", "my-app")
+    assert r.returncode == 1
+    assert f"environment file has no cloud.gcp.project_id.{tier} " in r.stderr
+    assert env == ""
+
+
+def test_proxmox_root_without_patch_window_variable_resolves(tmp_path):
+    r, env = resolve(tmp_path, UNFILLED, "--platform", "proxmox", "--repo", "vm-repo")
+    assert r.returncode == 0, r.stderr
+    assert "TF_VAR_resource_pool=pool-vm-repo\n" in env
+    assert "TF_VAR_patch_window" not in env
+
+
+def test_proxmox_root_that_declares_patch_window_fails_naming_it(tmp_path):
+    r, env = resolve(tmp_path, UNFILLED, "--platform", "proxmox", "--repo", "vm-repo",
+                     variables=["patch_window"])
+    assert r.returncode == 1
+    assert "environment file has no patch_window " in r.stderr
+    assert 'declares variable "patch_window"' in r.stderr
+    assert env == ""
