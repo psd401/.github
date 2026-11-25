@@ -214,3 +214,63 @@ def test_only_those_steps_depend_on_gate():
 def test_secret_scan_job_does_not_depend_on_gate():
     job = workflow()["jobs"]["secret-scan"]
     assert job["if"] == "inputs.secret-scan-mode != 'off'"
+
+
+# --- Run gate: an empty test-command ---------------------------------------
+# psd-dev-standards standards/05-testing.md gate 3 (CIO decision 2026-11-25):
+# test-command "" used to skip tests without failing.
+
+RUN_GATE_ENV = {
+    "PM": "${{ steps.pm.outputs.pm }}",
+    "LINT_CMD": "${{ inputs.lint-command }}",
+    "TYPECHECK_CMD": "${{ inputs.typecheck-command }}",
+    "BUILD_CMD": "${{ inputs.build-command }}",
+    "TEST_CMD": "${{ inputs.test-command }}",
+    "ALLOW_NO_TESTS": "${{ inputs.allow-no-tests }}",
+    "UPSTREAM_RESULTS": "${{ inputs.upstream-results }}",
+}
+
+
+def run_gate(tmp_path, test_cmd, allow="false", upstream=""):
+    s = step_named("Run gate")
+    assert s["env"] == RUN_GATE_ENV
+    script = tmp_path / "gate.sh"
+    script.write_text(s["run"])
+    # lint, typecheck and build are "" so only the test branch runs.
+    env = {"PATH": "/usr/bin:/bin", "PM": "none", "LINT_CMD": "", "TYPECHECK_CMD": "", "BUILD_CMD": "",
+           "TEST_CMD": test_cmd, "ALLOW_NO_TESTS": allow, "UPSTREAM_RESULTS": upstream}
+    proc = subprocess.run(["bash", "-e", str(script)], env=env, cwd=tmp_path,
+                          capture_output=True, text=True, timeout=30)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def test_empty_test_command_fails(tmp_path):
+    rc, out = run_gate(tmp_path, "")
+    assert rc == 1, out
+    assert "::error::test-command is empty" in out
+
+
+@pytest.mark.parametrize("upstream", [" ", "\t \n"])
+def test_empty_test_command_fails_with_blank_upstream(upstream, tmp_path):
+    rc, out = run_gate(tmp_path, "", upstream=upstream)
+    assert rc == 1, out
+
+
+def test_empty_test_command_allowed_with_allow_no_tests(tmp_path):
+    rc, out = run_gate(tmp_path, "", allow="true")
+    assert rc == 0, out
+    assert "::warning::test-command is empty" in out
+
+
+def test_empty_test_command_allowed_with_upstream_jobs(tmp_path):
+    rc, out = run_gate(tmp_path, "", upstream="success success")
+    assert rc == 0, out
+    assert "upstream gate jobs run the tests" in out
+
+
+def test_custom_test_command_still_runs_and_its_failure_fails_the_gate(tmp_path):
+    rc, out = run_gate(tmp_path, "echo ran-tests")
+    assert rc == 0 and "ran-tests" in out, out
+    rc, out = run_gate(tmp_path, "false")
+    assert rc != 0, out
+
