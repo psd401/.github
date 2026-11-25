@@ -16,4 +16,4 @@ jobs:
   security-scan:
     permissions:
       contents: read
-    uses: PSD401/.github/.github/workflows/reusable-security-scan.yml@96b807c4d40e61775ccfc412f9d7bac5e561147b # v1.16.0
+    uses: PSD401/.github/.github/workflows/reusable-security-scan.yml@c33b1cc1a0872130d121fa8c56fff9d743a8c3c4 # v1.17.2
