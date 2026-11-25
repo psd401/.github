@@ -1,5 +1,5 @@
 # Reusable security scan: zizmor (workflow hardening) + gitleaks (secrets)
-# + the LICENSE check + dependency review on PRs. Scanners run as pinned CLI binaries, never
+# + the LICENSE check + the docs boundary check + dependency review on PRs. Scanners run as pinned CLI binaries, never
 # convenience actions (trivy-action compromise lesson, standards/04-security.md).
 name: Reusable Security Scan
 on:
@@ -21,6 +21,14 @@ on:
         description: "Space-separated allowed license identifiers (same as reusable-license-check.yml)"
         type: string
         default: "MIT"
+      check_docs:
+        description: "Docs boundary check (psd-dev-standards standards/22 rule 3 and Part E, CIO decision 2026-11-25): no private address, MAC or internal hostname outside docs/restricted/, docs/restricted/ listed in .openwikiignore, and no Markdown image from an outside URL. On a pull request only lines the PR adds fail; anything older is a warning"
+        type: boolean
+        default: true
+      internal_domains:
+        description: "Space-separated internal DNS domains whose hostnames are restricted detail (for example corp.example.org). Empty: hostnames aren't checked"
+        type: string
+        default: ""
 jobs:
   run:
     name: security-scan
@@ -165,6 +173,29 @@ jobs:
           done
           $ok || { echo "::error::LICENSE does not match allowed set: $ALLOWED_SPDX"; exit 1; }
           echo "License OK ($f)"
+      - name: Check out the docs boundary script (this reusable's own commit)
+        if: ${{ !cancelled() && inputs.check_docs }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .psd-docs-boundary
+          sparse-checkout: scripts/docs_boundary.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Docs boundary — restricted detail and outside images
+        # psd-dev-standards standards/22 rule 3 and Part E. Untracked files
+        # (the script's own checkout) are never read. Prints file, line and
+        # kind, never the matched value.
+        if: ${{ !cancelled() && inputs.check_docs }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INTERNAL_DOMAINS: ${{ inputs.internal_domains }}
+        run: |
+          args=()
+          [ -n "$BASE_SHA" ] && args+=(--base "$BASE_SHA")
+          for d in $INTERNAL_DOMAINS; do args+=(--domain "$d"); done
+          python3 -I .psd-docs-boundary/scripts/docs_boundary.py . "${args[@]}"
   dependency-review:
     name: dependency-review
     # A newer push to the same PR cancels this run, which could only report
