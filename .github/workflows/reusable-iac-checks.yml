@@ -633,10 +633,24 @@ jobs:
           output_file_path: checkov-results.sarif
           soft_fail: false
 
+      # Code scanning accepts SARIF from a private repo only with Code
+      # Security, which no private PSD401 repo has (2026-11-25), and the
+      # upload then also needs actions: read. Checkov above is the gate;
+      # the SARIF is a report. Public repos send it to code scanning;
+      # private repos (and scheduled runs, whose event has no repository)
+      # keep it as a run artifact.
       - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
-        if: always()
+        if: always() && github.event.repository.visibility == 'public'
         with:
           sarif_file: checkov-results.sarif
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && github.event.repository.visibility != 'public'
+        with:
+          name: ${{ needs.plan.outputs.artifact_name }}-checkov-sarif
+          path: checkov-results.sarif
+          if-no-files-found: ignore
+          retention-days: 30
 
   conftest:
     name: conftest
