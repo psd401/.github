@@ -97,7 +97,7 @@ jobs:
           "$RUNNER_TEMP/zizmor-venv/bin/pip" install --quiet --no-deps --require-hashes -r "$RUNNER_TEMP/zizmor-req.txt"
           export PATH="$RUNNER_TEMP/zizmor-venv/bin:$PATH"
           if [ -d .github/workflows ]; then
-            zizmor --min-severity high .github/workflows/ || { echo "::error::zizmor found high-severity workflow issues"; exit 1; }
+            zizmor --min-severity medium .github/workflows/ || { echo "::error::zizmor found medium- or high-severity workflow issues (psd-dev-standards standards/04 rule 6)"; exit 1; }
           else
             echo "no workflows to audit"
           fi
