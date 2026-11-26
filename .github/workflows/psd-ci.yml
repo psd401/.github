@@ -27,5 +27,6 @@ jobs:
       # path-filtered workflows run them.
       test-command: |
         python3 -I scripts/test_docs_boundary.py
+        python3 -I scripts/test_dependabot_auto_merge.py
         bash scripts/publish-plugin.test.sh
         bash scripts/requires-pull-requests.test.sh
