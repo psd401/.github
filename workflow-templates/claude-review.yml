@@ -15,7 +15,7 @@ jobs:
     # that Dependabot pushed to pass unreviewed. Anything else fails in the
     # reusable rather than skipping.
     if: ${{ !(github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
-    uses: PSD401/.github/.github/workflows/reusable-claude-review.yml@6ffbae4661c29d90aa488ef1e8ad03792d36f0d8 # v1.22.1
+    uses: PSD401/.github/.github/workflows/reusable-claude-review.yml@c45b4f3a318261e6728a51545ca8ca5e242abb61 # v1.22.2
     secrets:
       BEDROCK_API_KEY: ${{ secrets.BEDROCK_API_KEY }}
   # Dependabot PRs aren't reviewed, but production repos require a
@@ -26,4 +26,4 @@ jobs:
     name: claude-review
     permissions: {}
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
-    uses: PSD401/.github/.github/workflows/reusable-claude-review-skip.yml@6ffbae4661c29d90aa488ef1e8ad03792d36f0d8 # v1.22.1
+    uses: PSD401/.github/.github/workflows/reusable-claude-review-skip.yml@c45b4f3a318261e6728a51545ca8ca5e242abb61 # v1.22.2
