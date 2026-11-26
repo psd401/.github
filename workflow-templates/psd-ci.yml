@@ -19,7 +19,7 @@ jobs:
   #       upstream-results: ${{ join(needs.*.result, ' ') }}
   #       gate: "off"         # or auto to also run the standard gate
   psd-ci:
-    uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@45e3365407fc968b1771bf902eab6460447561b2 # v1.19.0
+    uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@fbd855320864efeb08ada315f1f9b5a9b289a5d7 # v1.19.1
     # No secrets: the reusable reads none, and `secrets: inherit` would hand it
     # every org and repo secret (psd-dev-standards standards/03, standards/06 §3).
     with:
