@@ -112,7 +112,9 @@ jobs:
     # a repo opts in with run_on_push. Schedule and manual runs are unchanged.
     if: github.event_name != 'push' || inputs.run_on_push
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60 cut off a 16+ page update of psd-dev-standards (79-page wiki) while
+    # it was still progressing (2026-11-26, psd-dev-standards#321).
+    timeout-minutes: 120
     steps:
       # "configured" gates every later step. It is false when the provider
       # secret is missing, or when a push changed only openwiki/: the
