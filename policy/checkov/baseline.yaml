@@ -27,9 +27,9 @@ checks:
     title: "Lambda function validates code signing"
     standard: "08-iac.md#checkov-baseline"
     reason: >-
-      Lambda code signing applies to .zip packages only, and PSD has no Lambda signing profile;
-      functions run container images from the app's own ECR repository, which only its deploy
-      role can push to. Standard 11 covers code that runs on district devices, not Lambda.
+      PSD doesn't sign Lambda code: there is no PSD Lambda signing profile, and standard 11 covers
+      code that runs on district devices, not Lambda (Kris, 2026-11-25). Container images can't be
+      signed this way at all; the skip covers .zip functions too.
 
   - id: CKV_AWS_144
     title: "S3 bucket has cross-region replication enabled"
