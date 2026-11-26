@@ -783,9 +783,11 @@ jobs:
           persist-credentials: false
           path: _policy
           sparse-checkout: |
+            policy/checkov/baseline.yaml
             policy/conftest/
             policy/data/telemetry-layers.yml
             schemas/iac/exceptions.schema.json
+            scripts/iac/check_checkov_skips.py
             scripts/iac/check_classification_downgrade.py
             scripts/iac/check_exceptions.py
             scripts/iac/install_conftest.sh
@@ -855,6 +857,26 @@ jobs:
         run: |
           python3 _policy/scripts/iac/check_exceptions.py \
             --schema _policy/schemas/iac/exceptions.schema.json exceptions.yml
+
+      # standards/08-iac.md 'Checkov baseline' (Kris, 2026-11-26): an inline
+      # #checkov:skip that this pull request adds or changes must cite an
+      # active exceptions.yml entry that names the check and expires on a
+      # date within a year. Skips already on the base branch aren't checked
+      # here. The base branch is checked out beside the head for comparison.
+      - name: Checkout base branch (new Checkov skips)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          path: _base
+
+      - name: New Checkov skips cite a live exception (standards/08-iac.md 'Checkov baseline')
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 _policy/scripts/iac/check_checkov_skips.py \
+            --head . --base _base --baseline _policy/policy/checkov/baseline.yaml \
+            --exceptions exceptions.yml
 
       # standards/08-iac.md 'Student PII downgrade'. Fails when a resource that
       # carried psd:data-classification = student-pii before this plan loses
