@@ -55,4 +55,27 @@ patch_once agent/repository-runner.js \
   '        process.stderr.write(`openwiki: page ${next.job.path} ${outcome.status}\n`);
         if (outcome.status === "skipped") {'
 
-echo "openwiki patched: #871 ENOENT restore; page-failure, rejection and progress logging"
+# 5. langchain-ai/openwiki#890 (open): the planner can keep calling submit_plan
+# after its plan is accepted. A repeat of the same plan returns "accepted", but
+# every call counts toward the 5-call cap, and the 6th throws "'submit_plan'
+# tool call limit reached", failing the run although a valid plan is already
+# saved (psd-dev-standards run 45762136584: "plan accepted: 55 pages", then
+# the cap one minute later, no rejection logged). Log each repeat, and when
+# the cap is hit after a plan is saved, continue with that plan. Any other
+# error, or the cap before a plan exists, still fails the run.
+patch_once generation/repository-run.js \
+  '        return { status: "accepted", totalPages: run.state.plan.pages.length };' \
+  '        process.stderr.write("openwiki: submit_plan repeated with the accepted plan\n");
+        return { status: "accepted", totalPages: run.state.plan.pages.length };'
+patch_once agent/repository-runner.js \
+  '    await streamWorkerTools(agent, [{ role: "user", content: "Plan this repository wiki now." }], resolveTraceThreadId(run.state.runId), onEvent);' \
+  '    try {
+        await streamWorkerTools(agent, [{ role: "user", content: "Plan this repository wiki now." }], resolveTraceThreadId(run.state.runId), onEvent);
+    }
+    catch (error) {
+        if (!(submitted && run.state.plan && String(error?.message ?? error).includes("tool call limit")))
+            throw error;
+        process.stderr.write(`openwiki: planner hit the submit_plan cap after its plan was accepted; continuing with the accepted plan (${run.state.plan.pages.length} pages)\n`);
+    }'
+
+echo "openwiki patched: #871 ENOENT restore; #890 planner cap after an accepted plan; page-failure, rejection and progress logging"
