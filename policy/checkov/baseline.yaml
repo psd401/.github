@@ -1,0 +1,49 @@
+---
+# ABOUTME: Checkov checks every caller of reusable-iac-checks.yml skips, because a PSD standard
+# ABOUTME: decides against what the check asks for. Merged with the repo's own skip-check list.
+#
+# Each entry is a standards decision, not an exception: it applies to every resource in every
+# repo, so it is only for a check whose requirement a standard rejects everywhere. A check that
+# is wrong for only some resources stays a per-resource skip with an exceptions.yml entry.
+# Adding or removing an entry is a PSD401/.github release; standards/08-iac.md
+# ("Checkov baseline") lists the same checks and why (Kris, 2026-11-25).
+#
+# Org count before the baseline (inline #checkov:skip comments on default branches,
+# 2026-11-25): CKV_AWS_272 23 skips in 4 repos, CKV_AWS_144 19 in 6, CKV2_AWS_62 19 in 6,
+# CKV_AWS_117 18 in 3, CKV_AWS_393 12 in 3.
+checks:
+  - id: CKV_AWS_117
+    title: "Lambda function is configured inside a VPC"
+    standard: "08-iac.md#tags-lambda-to-aurora-district-defaults"
+    reason: >-
+      Lambda reaches Aurora through the RDS Data API by default; a VPC-attached function needs a
+      stated reason and an exceptions.yml entry. The check asks for the opposite of the default.
+
+  - id: CKV_AWS_393
+    title: "GitHub OIDC trust policy restricts the subject to a repository"
+    standard: "08-iac.md#pr-flow-plain-github-actions-no-atlantis-spacelift-or-hcp-needed-at-our-scale"
+    reason: >-
+      New trust policies use GitHub's ID-based subject (repo:psd401@<owner-id>/<repo>@<repo-id>).
+      The check's pattern expects repo:<org>/<repo> and fails every compliant role.
+
+  - id: CKV_AWS_272
+    title: "Lambda function validates code signing"
+    standard: "08-iac.md#checkov-baseline"
+    reason: >-
+      Lambda code signing applies to .zip packages only, and PSD has no Lambda signing profile;
+      functions run container images from the app's own ECR repository, which only its deploy
+      role can push to. Standard 11 covers code that runs on district devices, not Lambda.
+
+  - id: CKV_AWS_144
+    title: "S3 bucket has cross-region replication enabled"
+    standard: "13-aws-accounts.md#standard"
+    reason: >-
+      Rule 6 keeps an app in one region (us-west-2, or us-east-1 for Bedrock-heavy apps).
+      Replication would copy the data to a second region and double its storage.
+
+  - id: CKV2_AWS_62
+    title: "S3 bucket has event notifications enabled"
+    standard: "08-iac.md#checkov-baseline"
+    reason: >-
+      An event notification is a feature, not a control: it sends object events to a consumer.
+      A bucket with no consumer has nothing to notify.

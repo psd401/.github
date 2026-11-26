@@ -624,11 +624,64 @@ jobs:
           name: ${{ needs.plan.outputs.artifact_name }}
           path: ${{ inputs.working_directory }}
 
+      - name: Validate tooling_ref
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          ref="$TOOLING_REF"
+          if [ -z "$ref" ] || [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          if [[ "$ref" != *..* ]]; then
+            if [[ "$ref" =~ ^refs/heads/[A-Za-z0-9._/-]+$ ]]; then
+              exit 0
+            fi
+            if [[ "$ref" != refs/* && "$ref" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]]; then
+              exit 0
+            fi
+          fi
+          echo "::error::tooling_ref must be empty, a 40-hex commit SHA or a branch name"
+          exit 1
+
+      - name: Checkout policy (this repo, pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ inputs.tooling_ref || job.workflow_sha }}
+          persist-credentials: false
+          path: _policy
+          sparse-checkout: |
+            policy/checkov/baseline.yaml
+            scripts/iac/checkov_skip_list.py
+            tools/iac/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      # tools/iac/requirements.txt pins pyyaml and every transitive
+      # dependency by hash.
+      - name: Install IaC helper dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/iac-helpers-venv"
+          "$RUNNER_TEMP/iac-helpers-venv/bin/pip" install --quiet --require-hashes -r _policy/tools/iac/requirements.txt
+          echo "$RUNNER_TEMP/iac-helpers-venv/bin" >> "$GITHUB_PATH"
+
+      # The org baseline (policy/checkov/baseline.yaml: checks a PSD
+      # standard decides against everywhere; standards/08-iac.md "Checkov
+      # baseline") plus the repo's own .checkov.yaml skip-check list.
+      # checkov-action's skip_check becomes --skip-check, which replaces the
+      # config file's list instead of adding to it, so both are merged here.
+      - name: Checkov skip list (org baseline + repo)
+        id: skips
+        run: |
+          list="$(python3 _policy/scripts/iac/checkov_skip_list.py --baseline _policy/policy/checkov/baseline.yaml --repo-config .checkov.yaml)"
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "Skipped checks: $list"
+
       - name: Checkov (plan JSON)
         uses: bridgecrewio/checkov-action@3f0caf0c3aa9f56ade6b49f6e60b63aaeafb75a3 # v12.3141.0
         with:
           file: ${{ inputs.working_directory }}/tfplan.json
           framework: terraform_plan
+          skip_check: ${{ steps.skips.outputs.list }}
           output_format: sarif
           output_file_path: checkov-results.sarif
           soft_fail: false
