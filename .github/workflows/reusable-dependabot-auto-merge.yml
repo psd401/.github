@@ -1,5 +1,5 @@
 # ABOUTME: Reusable workflow that turns on auto-merge for a Dependabot PR whose every update is a patch to a direct development dependency.
-# ABOUTME: Standard 04-security rule 4: those merge once required checks pass. Nothing else auto-merges. Every other PR is left for a person.
+# ABOUTME: Standard 04-security rule 4: those merge once required checks pass. With psd_reusable_pins on, so does a patch or minor bump of this repo's reusables. Every other PR is left for a person.
 #
 # It turns on auto-merge only when all of these hold:
 # 1. Dependabot opened the PR from a branch in this repo, not a fork (job if).
@@ -12,6 +12,12 @@
 # 4. dependabot/fetch-metadata reads the update, with commit verification on.
 # 5. Every update in the PR (a group has several) is a semver patch to a
 #    direct development dependency. Empty or unreadable metadata merges nothing.
+#    With psd_reusable_pins: true, an update also passes when it is a patch
+#    or minor bump of a reusable workflow in PSD401/.github (standard 04
+#    rule 4, approved 2026-11-23). Dependabot types every github-actions
+#    update direct:production, so without the input a pin bump always waits
+#    for a person. A major still waits: RELEASING.md makes any change a
+#    caller must edit for a major.
 # The merge call names the head commit those checks saw, so a later push
 # makes it fail. A run that does not approve the PR turns auto-merge off if
 # github-actions[bot] turned it on. GitHub keeps it on after a push by
@@ -42,6 +48,7 @@
 #       uses: PSD401/.github/.github/workflows/reusable-dependabot-auto-merge.yml@<release sha> # vX.Y.Z
 #       with:
 #         merge_method: squash
+#         psd_reusable_pins: true   # optional; default false
 name: Reusable Dependabot auto-merge
 
 "on":
@@ -51,6 +58,10 @@ name: Reusable Dependabot auto-merge
         description: "How GitHub merges the PR: merge, squash or rebase. Pass a method the calling repo allows"
         type: string
         default: squash
+      psd_reusable_pins:
+        description: "Also auto-merge a PR whose updates are patch or minor bumps of PSD401/.github reusable workflows (standard 04 rule 4). Off by default. The other gates still apply: a required status check on the base branch, and every commit written and signed by Dependabot"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -138,6 +149,11 @@ jobs:
 
       # Positive matches only, so an empty, missing or malformed list merges
       # nothing. --match-head-commit makes GitHub refuse if the head moved.
+      # A reusable pin is matched on three fields Dependabot writes: the
+      # github_actions ecosystem, a name under this repo's workflows folder
+      # (compared in lower case; callers write PSD401 and psd401), and a patch
+      # or minor update type. A major, another action, or a missing field
+      # fails the match.
       - name: Turn on auto-merge for patch updates to development dependencies
         id: decide
         if: steps.gate.outputs.enforced == 'true' && steps.provenance.outputs.dependabot == 'true'
@@ -145,19 +161,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           UPDATES: ${{ steps.metadata.outputs.updated-dependencies-json }}
           MERGE_METHOD: ${{ inputs.merge_method }}
+          PSD_PINS: ${{ inputs.psd_reusable_pins }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -o pipefail
-          if jq -e 'type == "array" and length > 0
-              and all(.[]; .updateType == "version-update:semver-patch" and .dependencyType == "direct:development")' \
+          if jq -e --arg pins "$PSD_PINS" 'type == "array" and length > 0
+              and all(.[];
+                (.updateType == "version-update:semver-patch" and .dependencyType == "direct:development")
+                or ($pins == "true"
+                    and .packageEcosystem == "github_actions"
+                    and ((.dependencyName // "") | ascii_downcase | startswith("psd401/.github/.github/workflows/reusable-"))
+                    and (.updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")))' \
               <<<"$UPDATES" >/dev/null 2>&1; then
             gh pr merge --auto "--$MERGE_METHOD" --match-head-commit "$HEAD_SHA" "$PR_URL"
             echo "merge=true" >> "$GITHUB_OUTPUT"
-            echo "Auto-merge on ($MERGE_METHOD): every update is a patch to a direct development dependency. It merges when required checks pass." >> "$GITHUB_STEP_SUMMARY"
+            if [ "$PSD_PINS" = "true" ]; then
+              echo "Auto-merge on ($MERGE_METHOD): every update is a patch to a direct development dependency, or a patch or minor bump of a PSD401/.github reusable. It merges when required checks pass." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Auto-merge on ($MERGE_METHOD): every update is a patch to a direct development dependency. It merges when required checks pass." >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             echo "merge=false" >> "$GITHUB_OUTPUT"
-            echo "Not auto-merged: not every update is a patch to a direct development dependency." >> "$GITHUB_STEP_SUMMARY"
+            if [ "$PSD_PINS" = "true" ]; then
+              echo "Not auto-merged: not every update is a patch to a direct development dependency, or a patch or minor bump of a PSD401/.github reusable." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Not auto-merged: not every update is a patch to a direct development dependency." >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
 
       # Runs on every outcome but approval, including a failed step above.

@@ -13,7 +13,8 @@ a few PRs instead of twenty.
 - Patch and minor updates with green CI are usually a quick merge.
 - Some repos call `reusable-dependabot-auto-merge.yml`. There, GitHub merges a
   Dependabot PR by itself when every update is a patch to a development dependency
-  and the required checks pass. Every other PR waits for you, and the job summary
+  and the required checks pass. A caller can also opt in to the same for patch
+  and minor bumps of the shared workflows in PSD401/.github. Every other PR waits for you, and the job summary
   says why.
 - The config deliberately holds back major versions. When you want a major upgrade,
   do it in your own PR, where you can handle the breaking changes.

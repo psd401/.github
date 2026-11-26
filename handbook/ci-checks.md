@@ -63,7 +63,9 @@ GitHub Actions patterns, and vulnerable dependency changes. It also checks the
 
 This check runs only on Dependabot PRs, in repos that call
 `reusable-dependabot-auto-merge.yml`. It turns on auto-merge when every update is a
-patch to a direct development dependency. Otherwise it leaves the PR for you, and the
+patch to a direct development dependency. A repo whose caller sets
+`psd_reusable_pins: true` also gets it for a patch or minor bump of the shared
+workflows in PSD401/.github. Otherwise it leaves the PR for you, and the
 job summary says why.
 
 - **It fails**: a GitHub API call failed, or the repo doesn't allow auto-merge or the
