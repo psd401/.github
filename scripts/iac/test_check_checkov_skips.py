@@ -16,7 +16,7 @@ TODAY = "2026-11-26"
 EXC = """exceptions:
   - id: log-retention
     standard: "12-cloud-cost.md"
-    rule: "Checkov CKV_AWS_338: log groups keep logs a year"
+    rule: "Checkov CKV_AWS_158: log groups use a customer-managed key"
     reason: r
     scope: "main.tf#aws_cloudwatch_log_group.a"
     approved_by: "IaC owner role"
@@ -86,7 +86,7 @@ def skip(check, reason):
 
 
 def test_new_skip_citing_a_live_entry_passes(tmp_path):
-    head = repo(tmp_path, "head", skip("CKV_AWS_338", "dev keeps 90 days; see exceptions.yml#log-retention"))
+    head = repo(tmp_path, "head", skip("CKV_AWS_158", "dev log group on the AWS key; see exceptions.yml#log-retention"))
     base = repo(tmp_path, "base", "")
     r = run(head, base)
     assert r.returncode == 0, r.stderr

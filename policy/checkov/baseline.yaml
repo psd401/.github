@@ -10,7 +10,7 @@
 #
 # Org count before the baseline (inline #checkov:skip comments on default branches,
 # 2026-11-25): CKV_AWS_272 23 skips in 4 repos, CKV_AWS_144 19 in 6, CKV2_AWS_62 19 in 6,
-# CKV_AWS_117 18 in 3.
+# CKV_AWS_117 18 in 3. Added 2026-11-26: CKV_AWS_338, 25 skips in 10 repos.
 #
 # Not here: CKV_AWS_393 (GitHub OIDC trust subject). It fails PSD's ID-based subjects, but it is
 # also the only check that catches a wildcard subject, so each compliant role keeps a
@@ -44,3 +44,13 @@ checks:
     reason: >-
       An event notification is a feature, not a control: it sends object events to a consumer.
       A bucket with no consumer has nothing to notify.
+
+  - id: CKV_AWS_338
+    title: "CloudWatch log group retains logs for at least 1 year"
+    standard: "12-cloud-cost.md#standard"
+    reason: >-
+      Rule 5 keeps application and operational log groups 90 days in prod and 30 in nonprod, and
+      Bedrock and student-pii log groups 30 days at most. The logs it keeps for 1 year (CloudTrail,
+      Config, flow logs, load balancer and WAF access logs) are stored in S3, not CloudWatch, so no
+      CloudWatch log group should meet this check (Kris, 2026-11-26). conftest's log_retention
+      rule still requires retention_in_days on every log group.

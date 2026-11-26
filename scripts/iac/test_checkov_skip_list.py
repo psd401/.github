@@ -16,7 +16,7 @@ BASELINE = ROOT / "policy" / "checkov" / "baseline.yaml"
 sys.path.insert(0, str(HERE))
 import checkov_skip_list as s  # noqa: E402
 
-SHIPPED = ["CKV_AWS_117", "CKV_AWS_272", "CKV_AWS_144", "CKV2_AWS_62"]
+SHIPPED = ["CKV_AWS_117", "CKV_AWS_272", "CKV_AWS_144", "CKV2_AWS_62", "CKV_AWS_338"]
 
 
 def run(*args):
@@ -36,7 +36,7 @@ def test_every_shipped_entry_names_a_standard_file():
 def test_repo_skips_are_kept_after_the_baseline_without_duplicates():
     r = run("--baseline", str(BASELINE), "--repo-config", str(FIX / "repo.checkov.yaml"))
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip().split(",") == SHIPPED + ["CKV_AWS_338"]
+    assert r.stdout.strip().split(",") == SHIPPED + ["CKV_AWS_158"]
 
 
 @pytest.mark.parametrize("cfg", ["no-skips.checkov.yaml", "does-not-exist.yaml"])
