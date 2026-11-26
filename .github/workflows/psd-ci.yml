@@ -1,0 +1,31 @@
+# ABOUTME: This repo's own psd-ci check, on every pull request: the offline script tests through the org reusable.
+# ABOUTME: The path-filtered workflows (iac-tests, openwiki-smoke, publish-plugin-test, docs-boundary-test) still run the heavier suites.
+name: CI
+on:
+  # pull_request only: a check doesn't re-run after the merge (psd-dev-standards standards/06 §4, Runner minutes).
+  # No paths filter: a required check has to report on every pull request,
+  # and a workflow a paths filter skips reports nothing.
+  pull_request:
+permissions:
+  contents: read
+
+jobs:
+  psd-ci:
+    # Pinned to a release like every other caller, so this runs the released
+    # reusable, not the copy in the pull request. openwiki-smoke.yml and
+    # iac-tests.yml are what exercise a changed reusable before release.
+    uses: PSD401/.github/.github/workflows/reusable-psd-ci.yml@fbd855320864efeb08ada315f1f9b5a9b289a5d7 # v1.19.1
+    # No secrets: the reusable reads none, and `secrets: inherit` would hand it
+    # every org and repo secret (psd-dev-standards standards/03, standards/06 §3).
+    with:
+      # The org CodeBuild runner where this repo is in its runner group, a
+      # GitHub-hosted runner otherwise (standards/04 rule 21).
+      runner: ${{ vars.PSD_LINUX_RUNNER || 'github' }}
+      # Offline, seconds each, no installs: python3 and bash are on the runner.
+      # Not here: validate-marketplace.test.sh (npm-installs the locked Claude
+      # Code CLI) and scripts/iac (hash-locked venv, age, conftest); their
+      # path-filtered workflows run them.
+      test-command: |
+        python3 -I scripts/test_docs_boundary.py
+        bash scripts/publish-plugin.test.sh
+        bash scripts/requires-pull-requests.test.sh
