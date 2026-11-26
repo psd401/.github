@@ -112,7 +112,7 @@ jobs:
     # a repo opts in with run_on_push. Schedule and manual runs are unchanged.
     if: github.event_name != 'push' || inputs.run_on_push
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
     steps:
       # "configured" gates every later step. It is false when the provider
       # secret is missing, or when a push changed only openwiki/: the
