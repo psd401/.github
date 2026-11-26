@@ -1,0 +1,6 @@
+---
+framework:
+  - terraform_plan
+skip-check:
+  - CKV_AWS_338   # exceptions.yml#dev-log-retention
+  - CKV_AWS_117   # also in the baseline

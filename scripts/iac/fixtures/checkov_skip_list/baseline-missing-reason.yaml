@@ -1,0 +1,5 @@
+---
+checks:
+  - id: CKV_AWS_117
+    title: t
+    standard: s
