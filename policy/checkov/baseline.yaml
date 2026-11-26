@@ -10,7 +10,11 @@
 #
 # Org count before the baseline (inline #checkov:skip comments on default branches,
 # 2026-11-25): CKV_AWS_272 23 skips in 4 repos, CKV_AWS_144 19 in 6, CKV2_AWS_62 19 in 6,
-# CKV_AWS_117 18 in 3, CKV_AWS_393 12 in 3.
+# CKV_AWS_117 18 in 3.
+#
+# Not here: CKV_AWS_393 (GitHub OIDC trust subject). It fails PSD's ID-based subjects, but it is
+# also the only check that catches a wildcard subject, so each compliant role keeps a
+# per-resource skip and a new trust policy is still reviewed (Kris, 2026-11-25).
 checks:
   - id: CKV_AWS_117
     title: "Lambda function is configured inside a VPC"
@@ -18,13 +22,6 @@ checks:
     reason: >-
       Lambda reaches Aurora through the RDS Data API by default; a VPC-attached function needs a
       stated reason and an exceptions.yml entry. The check asks for the opposite of the default.
-
-  - id: CKV_AWS_393
-    title: "GitHub OIDC trust policy restricts the subject to a repository"
-    standard: "08-iac.md#pr-flow-plain-github-actions-no-atlantis-spacelift-or-hcp-needed-at-our-scale"
-    reason: >-
-      New trust policies use GitHub's ID-based subject (repo:psd401@<owner-id>/<repo>@<repo-id>).
-      The check's pattern expects repo:<org>/<repo> and fails every compliant role.
 
   - id: CKV_AWS_272
     title: "Lambda function validates code signing"
