@@ -10,7 +10,7 @@ jobs:
     permissions:
       contents: read # the reusable only reads with GITHUB_TOKEN; writes use the psd-automation App
       pull-requests: read
-    uses: PSD401/.github/.github/workflows/reusable-openwiki.yml@bf041d7e251023502d143a5af3b19bdf449ac65c # v1.22.4
+    uses: PSD401/.github/.github/workflows/reusable-openwiki.yml@fee7c33b6f3f1d4cb522d9a1241862da643d3874 # v1.23.0
     with:
       base_branch: $default-branch
     secrets:

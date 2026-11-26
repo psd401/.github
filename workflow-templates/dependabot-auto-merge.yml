@@ -1,6 +1,7 @@
 # Turns on auto-merge for a Dependabot PR whose every update is a patch to a
-# development dependency (standards/04-security.md rule 4). GitHub merges it
-# once the required checks pass. Every other PR waits for a person.
+# development dependency, or a patch or minor bump of the shared workflows in
+# PSD401/.github (standards/04-security.md rule 4). GitHub merges it once the
+# required checks pass. Every other PR waits for a person.
 # Set merge_method to a method this repo allows: merge, squash or rebase.
 name: Dependabot auto-merge
 "on": pull_request
@@ -11,6 +12,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: PSD401/.github/.github/workflows/reusable-dependabot-auto-merge.yml@bf041d7e251023502d143a5af3b19bdf449ac65c # v1.22.4
+    uses: PSD401/.github/.github/workflows/reusable-dependabot-auto-merge.yml@fee7c33b6f3f1d4cb522d9a1241862da643d3874 # v1.23.0
     with:
       merge_method: squash
+      psd_reusable_pins: true
