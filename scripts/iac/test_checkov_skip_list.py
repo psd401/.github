@@ -16,14 +16,14 @@ BASELINE = ROOT / "policy" / "checkov" / "baseline.yaml"
 sys.path.insert(0, str(HERE))
 import checkov_skip_list as s  # noqa: E402
 
-SHIPPED = ["CKV_AWS_117", "CKV_AWS_393", "CKV_AWS_272", "CKV_AWS_144", "CKV2_AWS_62"]
+SHIPPED = ["CKV_AWS_117", "CKV_AWS_272", "CKV_AWS_144", "CKV2_AWS_62"]
 
 
 def run(*args):
     return subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True)
 
 
-def test_shipped_baseline_is_the_five_approved_checks():
+def test_shipped_baseline_is_the_four_approved_checks():
     assert s.baseline_ids(BASELINE) == SHIPPED
 
 
