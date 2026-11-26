@@ -258,6 +258,15 @@ jobs:
           # Anthropic SDK refuses those above 21,333 (#1046). 0.7.3+ streams;
           # raise this with that bump.
           OPENWIKI_MAX_OUTPUT_TOKENS: "21000"
+          # Pages are written one at a time by default (~1.5 min each), so a
+          # full update of a large wiki overruns the job limit:
+          # psd-dev-standards planned 77 pages and was cancelled at 120 min
+          # with 74 done (run 45794231836, 2026-11-26). openwiki 0.9.0 runs
+          # up to 8 page workers; its README suggests 2 to 4. A worker that
+          # hits a provider rate limit lowers the run's concurrency by one
+          # and its page is retried on the next update, so throttling slows
+          # a run rather than failing it.
+          OPENWIKI_PAGE_CONCURRENCY: "4"
         run: |
           first_build=false
           [ -f openwiki/.last-update.json ] || first_build=true
