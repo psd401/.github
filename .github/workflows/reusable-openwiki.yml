@@ -313,12 +313,29 @@ jobs:
           # alone is not a wiki.
           [ "$pages" -gt 2 ] || { echo "::error::OpenWiki wrote only $pages page(s); not opening a PR for an empty wiki."; exit 1; }
 
+      # An App installation token lasts one hour, and a large update runs
+      # longer (psd-dev-standards: 1h51m for 73 pages, 2026-11-26), so the
+      # token minted at job start has expired by now and the push fails with
+      # "could not read Username" (psd-dev-standards#321). Mint a fresh one,
+      # with the same scope, for the PR and the merge.
+      - name: Mint automation app token for the docs PR
+        if: steps.gate.outputs.configured == 'true' && !inputs.dry_run
+        id: pr-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.PSD_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.PSD_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: PSD401
+          repositories: ${{ steps.gate.outputs.repo_name }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Create OpenWiki update pull request
         if: steps.gate.outputs.configured == 'true' && !inputs.dry_run
         id: docs-pr
         uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.pr-token.outputs.token }}
           base: ${{ inputs.base_branch }}
           add-paths: openwiki
           branch: openwiki/update
@@ -338,7 +355,7 @@ jobs:
       - name: Auto-merge docs PR
         if: steps.gate.outputs.configured == 'true' && inputs.auto_merge && steps.docs-pr.outputs.pull-request-number != ''
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.pr-token.outputs.token }}
           PR: ${{ steps.docs-pr.outputs.pull-request-number }}
         # Merge now if GitHub allows it. In repos with required status checks
         # the checks haven't run yet, so GitHub refuses (reported by Mason
