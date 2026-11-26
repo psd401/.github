@@ -42,9 +42,10 @@ EXPR = {
     "pr_url": "${{ github.event.pull_request.html_url }}",
     "head_sha": "${{ github.event.pull_request.head.sha }}",
     "updates": "${{ steps.metadata.outputs.updated-dependencies-json }}",
+    "psd_pins": "${{ inputs.psd_reusable_pins }}",
 }
 DEFAULTS = {"token": "fake-token", "merge_method": "squash", "base_ref": "main", "pr": "7",
-            "pr_url": PR_URL, "head_sha": HEAD_SHA, "updates": "[]"}
+            "pr_url": PR_URL, "head_sha": HEAD_SHA, "updates": "[]", "psd_pins": "false"}
 
 # Answers gh api from FAKE_<NAME> (a stream of JSON pages) or fails on FAKE_FAIL_<NAME>=1.
 # Without --paginate it serves only the first page, like gh.
@@ -190,6 +191,21 @@ def dep(name="eslint", update=PATCH, dtype=DEV):
             "alertState": "", "ghsaId": "", "cvss": 0}
 
 
+MINOR = "version-update:semver-minor"
+PSD_CI = "PSD401/.github/.github/workflows/reusable-psd-ci.yml"
+
+
+def pin(name=PSD_CI, update=MINOR, ecosystem="github_actions"):
+    """A github-actions update as fetch-metadata reports it. Dependabot types
+    every one direct:production: psd401/psd-eoc#709 (reusable-psd-ci.yml 1.5.0
+    to 1.7.0, semver-minor), and the astral-sh/setup-uv update in
+    psd401/blockfinder run 45825313712, read 2026-11-26."""
+    return {"dependencyName": name, "dependencyType": "direct:production", "updateType": update,
+            "directory": "/", "packageEcosystem": ecosystem, "targetBranch": "main", "prevVersion": "1.5.0",
+            "newVersion": "1.7.0", "compatScore": 0, "maintainerChanges": False, "dependencyGroup": "",
+            "alertState": "", "ghsaId": "", "cvss": 0}
+
+
 # --- merge_method validation ---------------------------------------------
 
 def test_merge_method_is_checked_first():
@@ -320,6 +336,82 @@ def test_decision_does_not_merge(updates, tmp_path):
     assert one_line(r.summary), r.summary
 
 
+# --- psd_reusable_pins: patch and minor bumps of this repo's reusables -----
+
+PIN_MERGES = {
+    "minor": [pin()],
+    "patch": [pin(update=PATCH)],
+    "lower-case owner": [pin("psd401/.github/.github/workflows/reusable-security-scan.yml")],
+    "group of pins": [pin(), pin(PSD_CI.replace("psd-ci", "claude-review"), PATCH),
+                      pin(PSD_CI.replace("psd-ci", "security-scan"))],
+}
+
+
+@pytest.mark.parametrize("updates", PIN_MERGES.values(), ids=PIN_MERGES.keys())
+def test_reusable_pins_merge_with_the_input_on(updates, tmp_path):
+    r = run_step("decide", tmp_path, updates=json.dumps(updates), psd_pins="true")
+    assert r.rc == 0, r.out
+    assert r.outputs.get("merge") == "true"
+    assert len(r.pr_calls) == 1, r.calls
+    args = r.pr_calls[0].split()
+    assert "--auto" in args and "--squash" in args and "--admin" not in args
+    assert args[args.index("--match-head-commit") + 1] == HEAD_SHA
+    assert one_line(r.summary), r.summary
+    assert "PSD401/.github reusable" in r.summary
+
+
+@pytest.mark.parametrize("updates", PIN_MERGES.values(), ids=PIN_MERGES.keys())
+@pytest.mark.parametrize("value", ["false", "", "True", "1", "yes"])
+def test_reusable_pins_do_not_merge_unless_the_input_is_exactly_true(updates, value, tmp_path):
+    r = run_step("decide", tmp_path, updates=json.dumps(updates), psd_pins=value)
+    assert r.rc == 0, r.out
+    assert r.outputs.get("merge") == "false"
+    assert r.pr_calls == []
+    assert one_line(r.summary), r.summary
+
+
+PIN_REFUSED = {
+    "major": [pin(update="version-update:semver-major")],
+    "null updateType": [pin(update=None)],
+    "another action": [pin("astral-sh/setup-uv")],
+    "pin grouped with another action": [pin(), pin("astral-sh/setup-uv")],
+    "pin grouped with a minor dev dep": [pin(), dep(update=MINOR)],
+    "look-alike repo": [pin("PSD401/.github-evil/.github/workflows/reusable-x.yml")],
+    "look-alike owner": [pin("notPSD401/.github/.github/workflows/reusable-x.yml")],
+    "owner as a path prefix": [pin("x/PSD401/.github/.github/workflows/reusable-x.yml")],
+    "a workflow here that is not a reusable": [pin("PSD401/.github/.github/workflows/release.yml")],
+    "an action in this repo, not a workflow": [pin("PSD401/.github/actions/reusable-x")],
+    "pin name in another ecosystem": [pin(ecosystem="npm_and_yarn")],
+    "missing ecosystem": [{k: v for k, v in pin().items() if k != "packageEcosystem"}],
+    "missing name": [{k: v for k, v in pin().items() if k != "dependencyName"}],
+    "null name": [dict(pin(), dependencyName=None)],
+    "name not a string": [dict(pin(), dependencyName=7)],
+}
+
+
+@pytest.mark.parametrize("updates", PIN_REFUSED.values(), ids=PIN_REFUSED.keys())
+def test_reusable_pins_input_accepts_nothing_else(updates, tmp_path):
+    r = run_step("decide", tmp_path, updates=json.dumps(updates), psd_pins="true")
+    assert r.rc == 0, r.out
+    assert r.outputs.get("merge") == "false"
+    assert r.pr_calls == []
+    assert one_line(r.summary), r.summary
+
+
+def test_a_pin_grouped_with_a_patch_dev_dep_merges_with_the_input_on(tmp_path):
+    """Each update passes one of the two rules. Dependabot does not mix
+    ecosystems in one PR, so this is the rule's edge, not a case seen."""
+    r = run_step("decide", tmp_path, updates=json.dumps([pin(), dep()]), psd_pins="true")
+    assert r.outputs.get("merge") == "true"
+
+
+@pytest.mark.parametrize("updates", [[dep()], [dep("eslint"), dep("prettier")]], ids=["one", "group"])
+def test_patch_dev_deps_still_merge_with_the_input_on(updates, tmp_path):
+    r = run_step("decide", tmp_path, updates=json.dumps(updates), psd_pins="true")
+    assert r.outputs.get("merge") == "true"
+    assert len(r.pr_calls) == 1
+
+
 def test_decision_merge_failure_fails_the_step(tmp_path):
     r = run_step("decide", tmp_path, updates=json.dumps([dep()]), gh={"FAIL_PR": "1"})
     assert r.rc != 0
@@ -385,10 +477,14 @@ def test_trigger_is_workflow_call_only():
     assert set(doc["on"]) == {"workflow_call"}
 
 
-def test_merge_method_is_the_only_input_and_defaults_to_squash():
+def test_inputs_are_merge_method_and_the_pins_switch_which_is_off_by_default():
     call = workflow()["on"]["workflow_call"]
     assert set(call) == {"inputs"}, "no secrets or outputs"
-    assert set(call["inputs"]) == {"merge_method"}
+    assert set(call["inputs"]) == {"merge_method", "psd_reusable_pins"}
+    pins = call["inputs"]["psd_reusable_pins"]
+    assert pins["type"] == "boolean"
+    assert pins["default"] is False
+    assert pins.get("required", False) is False
     m = call["inputs"]["merge_method"]
     assert m["type"] == "string"
     assert m["default"] == "squash"
@@ -501,3 +597,4 @@ def test_header_caller_snippet_is_a_valid_caller():
     assert "github.event.pull_request.user.login == 'dependabot[bot]'" in call["if"]
     assert call["uses"].startswith("PSD401/.github/.github/workflows/reusable-dependabot-auto-merge.yml@")
     assert call["with"]["merge_method"] in METHODS
+    assert set(call["with"]) <= set(workflow()["on"]["workflow_call"]["inputs"])
