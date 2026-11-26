@@ -34,4 +34,25 @@ patch_once agent/repository-runner.js \
   '        skipped = outcome;
         process.stderr.write(`openwiki: page worker attempt ${attempt} for ${job.path} did not submit${outcome.error ? `: ${outcome.error?.stack ?? outcome.error}` : " (exited without submit_page)"}\n`);'
 
-echo "openwiki patched: #871 ENOENT restore, page-worker failure logging"
+# 3. Visibility: 0.9.0 stops a worker after 5 submit_plan/submit_page calls
+# and fails the run with only "'submit_plan' tool call limit reached", never
+# saying why each submission was rejected (psd-dev-standards#321). Write each
+# rejection's code and message to stderr.
+patch_once agent/repository-runner.js \
+  'function createSubmissionRejection(toolName, error, retry, toolCallId) {' \
+  'function createSubmissionRejection(toolName, error, retry, toolCallId) {
+    process.stderr.write(`openwiki: ${toolName} rejected (${error.code}): ${String(error.message).slice(0, 2000)}\n`);'
+
+# 4. Progress: --print shows nothing until the run ends, so a run cut off by
+# the job timeout can't be told apart from a hung one. Log the planned page
+# count and each page's outcome as it finishes.
+patch_once generation/repository-run.js \
+  '    return { status: "accepted", totalPages: plan.pages.length };' \
+  '    process.stderr.write(`openwiki: plan accepted: ${plan.pages.length} pages, ${plan.deletePages.length} deletions\n`);
+    return { status: "accepted", totalPages: plan.pages.length };'
+patch_once agent/repository-runner.js \
+  '        if (outcome.status === "skipped") {' \
+  '        process.stderr.write(`openwiki: page ${next.job.path} ${outcome.status}\n`);
+        if (outcome.status === "skipped") {'
+
+echo "openwiki patched: #871 ENOENT restore; page-failure, rejection and progress logging"
