@@ -34,4 +34,13 @@ patch_once agent/repository-runner.js \
   '        skipped = outcome;
         process.stderr.write(`openwiki: page worker attempt ${attempt} for ${job.path} did not submit${outcome.error ? `: ${outcome.error?.stack ?? outcome.error}` : " (exited without submit_page)"}\n`);'
 
-echo "openwiki patched: #871 ENOENT restore, page-worker failure logging"
+# 3. Visibility: 0.9.0 stops a worker after 5 submit_plan/submit_page calls
+# and fails the run with only "'submit_plan' tool call limit reached", never
+# saying why each submission was rejected (psd-dev-standards#321). Write each
+# rejection's code and message to stderr.
+patch_once agent/repository-runner.js \
+  'function createSubmissionRejection(toolName, error, retry, toolCallId) {' \
+  'function createSubmissionRejection(toolName, error, retry, toolCallId) {
+    process.stderr.write(`openwiki: ${toolName} rejected (${error.code}): ${String(error.message).slice(0, 2000)}\n`);'
+
+echo "openwiki patched: #871 ENOENT restore, page-worker failure and submission rejection logging"
