@@ -11,8 +11,13 @@ variable "kms_key_arn" {
 }
 
 variable "access_log_bucket" {
-  description = "The account's S3 server access log bucket, from psd-aws-infra. Logs land under <name>/."
+  description = "The account's S3 server access log bucket, from psd-aws-infra (psd-s3-access-logs-<account alias>-<region>). Its bucket policy lets the logging service write for any bucket in the account. Logs land under <name>/."
   type        = string
+
+  validation {
+    condition     = var.access_log_bucket != var.name
+    error_message = "A bucket can't log to itself."
+  }
 }
 
 variable "noncurrent_version_days" {

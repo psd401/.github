@@ -11,7 +11,7 @@ variable "name" {
 }
 
 variable "log_group_prefixes" {
-  description = "Log group name prefixes CloudWatch Logs may encrypt with this key. The default covers the module library's log groups for the app (/aws/lambda/<name>-...). Empty leaves CloudWatch Logs out of the key policy."
+  description = "Log group name prefixes CloudWatch Logs may encrypt with this key. The default covers the module library's log groups for the app (/aws/lambda/<name>..., which matches a function named <name> or <name>-<anything>). Empty leaves CloudWatch Logs out of the key policy."
   type        = list(string)
   default     = null
 }

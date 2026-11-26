@@ -100,4 +100,11 @@ resource "aws_lambda_function" "this" {
   }
 
   depends_on = [aws_cloudwatch_log_group.this, aws_iam_role_policy.function]
+
+  lifecycle {
+    precondition {
+      condition     = local.image || (var.filename != null && var.handler != null && var.runtime != null)
+      error_message = "A .zip package (no image_uri) needs filename, handler and runtime."
+    }
+  }
 }

@@ -2,26 +2,11 @@
 # ABOUTME: ARM64, X-Ray, reserved concurrency, the key, log group, dead-letter queue, role policy, inputs.
 
 mock_provider "aws" {
-  mock_data "aws_caller_identity" {
-    defaults = { account_id = "111122223333" }
-  }
-  mock_data "aws_partition" {
-    defaults = { partition = "aws" }
-  }
-  mock_data "aws_region" {
-    defaults = { region = "us-west-2" }
-  }
-  mock_resource "aws_kms_key" {
-    defaults = { arn = "arn:aws:kms:us-west-2:111122223333:key/k", key_id = "k" }
-  }
   mock_resource "aws_sqs_queue" {
     defaults = { arn = "arn:aws:sqs:us-west-2:111122223333:demo-dev-worker-dlq" }
   }
   mock_resource "aws_cloudwatch_log_group" {
     defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/aws/lambda/demo-dev-worker" }
-  }
-  mock_resource "aws_s3_bucket" {
-    defaults = { arn = "arn:aws:s3:::demo-dev-data", id = "demo-dev-data" }
   }
 }
 
@@ -115,4 +100,12 @@ run "zero_concurrency" {
     reserved_concurrency = 0
   }
   expect_failures = [var.reserved_concurrency]
+}
+
+run "zip_without_handler" {
+  command = plan
+  variables {
+    handler = null
+  }
+  expect_failures = [aws_lambda_function.this]
 }

@@ -1,27 +1,6 @@
 # ABOUTME: Offline terraform test for the dynamodb-table module against a mocked aws provider.
 
 mock_provider "aws" {
-  mock_data "aws_caller_identity" {
-    defaults = { account_id = "111122223333" }
-  }
-  mock_data "aws_partition" {
-    defaults = { partition = "aws" }
-  }
-  mock_data "aws_region" {
-    defaults = { region = "us-west-2" }
-  }
-  mock_resource "aws_kms_key" {
-    defaults = { arn = "arn:aws:kms:us-west-2:111122223333:key/k", key_id = "k" }
-  }
-  mock_resource "aws_sqs_queue" {
-    defaults = { arn = "arn:aws:sqs:us-west-2:111122223333:demo-dev-worker-dlq" }
-  }
-  mock_resource "aws_cloudwatch_log_group" {
-    defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/aws/lambda/demo-dev-worker" }
-  }
-  mock_resource "aws_s3_bucket" {
-    defaults = { arn = "arn:aws:s3:::demo-dev-data", id = "demo-dev-data" }
-  }
 }
 
 variables {
@@ -55,6 +34,22 @@ run "bad_attribute_type" {
   command = plan
   variables {
     attributes = { pk = "STRING" }
+  }
+  expect_failures = [var.attributes]
+}
+
+run "attribute_no_key_uses" {
+  command = plan
+  variables {
+    attributes = { pk = "S", gsi1pk = "S" }
+  }
+  expect_failures = [var.attributes]
+}
+
+run "range_key_missing_from_attributes" {
+  command = plan
+  variables {
+    range_key = "sk"
   }
   expect_failures = [var.attributes]
 }

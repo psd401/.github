@@ -10,7 +10,7 @@ locals {
   arn     = data.aws_partition.current.partition
   region  = data.aws_region.current.region
 
-  log_group_prefixes = var.log_group_prefixes == null ? ["/aws/lambda/${var.name}-"] : var.log_group_prefixes
+  log_group_prefixes = var.log_group_prefixes == null ? ["/aws/lambda/${var.name}"] : var.log_group_prefixes
 
   # The policy is written inline, not as an aws_iam_policy_document: Resource "*" in a key policy
   # means this key, and Checkov's identity-policy checks (CKV_AWS_109/111/356) can't tell the two

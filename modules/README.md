@@ -53,6 +53,12 @@ module "worker" {
 - `lambda` manages `image_uri`. An app that deploys images outside Terraform keeps its own
   function resource for now; a lifecycle rule can't depend on an input.
 - `log_retention_days` takes 30 or 90 only (standards/12 rule 5).
+- `app-key` lets CloudWatch Logs use the key for log groups starting `/aws/lambda/<app-key name>`.
+  Name functions `<app-key name>-<function>` (or the same name for a one-function app); a log
+  group outside that prefix needs `log_group_prefixes`, or its logs can't be written.
+- `dynamodb-table` makes no secondary indexes yet.
+- IAM is eventually consistent: on a first apply, `CreateFunction` can still report that the role
+  can't send to the dead-letter queue. Running the apply again clears it.
 - Every module has an offline `terraform test` (`tests/`), run by `iac-tests.yml`
   `app-modules-test`. They check the module's own settings, not AWS behavior; a real plan and
   apply in an app is the test of the key policy and the role policy.

@@ -14,15 +14,6 @@ mock_provider "aws" {
   mock_resource "aws_kms_key" {
     defaults = { arn = "arn:aws:kms:us-west-2:111122223333:key/k", key_id = "k" }
   }
-  mock_resource "aws_sqs_queue" {
-    defaults = { arn = "arn:aws:sqs:us-west-2:111122223333:demo-dev-worker-dlq" }
-  }
-  mock_resource "aws_cloudwatch_log_group" {
-    defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/aws/lambda/demo-dev-worker" }
-  }
-  mock_resource "aws_s3_bucket" {
-    defaults = { arn = "arn:aws:s3:::demo-dev-data", id = "demo-dev-data" }
-  }
 }
 
 variables {
@@ -45,8 +36,8 @@ run "defaults" {
     error_message = "three statements by default"
   }
   assert {
-    condition     = jsondecode(aws_kms_key.this.policy).Statement[1].Condition.ArnLike["kms:EncryptionContext:aws:logs:arn"] == ["arn:aws:logs:us-west-2:111122223333:log-group:/aws/lambda/demo-dev-*"]
-    error_message = "logs may use the key only for the app's own /aws/lambda/<name>- log groups"
+    condition     = jsondecode(aws_kms_key.this.policy).Statement[1].Condition.ArnLike["kms:EncryptionContext:aws:logs:arn"] == ["arn:aws:logs:us-west-2:111122223333:log-group:/aws/lambda/demo-dev*"]
+    error_message = "logs may use the key only for the app's own /aws/lambda/<name>* log groups, the bare name included"
   }
   assert {
     condition     = jsondecode(aws_kms_key.this.policy).Statement[1].Principal.Service == "logs.us-west-2.amazonaws.com"

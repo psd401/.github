@@ -20,12 +20,17 @@ variable "range_key" {
 }
 
 variable "attributes" {
-  description = "Key attributes only (the hash key, the range key and any index keys), name -> S, N or B."
+  description = "The table's key attributes, name -> S, N or B: the hash key and the range key, nothing else. The module makes no secondary indexes yet, and DynamoDB rejects an attribute no key uses."
   type        = map(string)
 
   validation {
     condition     = alltrue([for t in values(var.attributes) : contains(["S", "N", "B"], t)])
     error_message = "Each attribute type is S, N or B."
+  }
+
+  validation {
+    condition     = toset(keys(var.attributes)) == toset(compact([var.hash_key, var.range_key]))
+    error_message = "attributes names exactly the hash key and the range key."
   }
 }
 
